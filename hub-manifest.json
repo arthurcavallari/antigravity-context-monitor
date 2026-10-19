@@ -1,0 +1,18 @@
+{
+  "id": "context-monitor",
+  "name": "Context & Quota Monitor",
+  "tagline": "Live context telemetry, working-memory gauge, compaction risk, MCP control plane, and diagnostics sidecar for Google Antigravity.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Arthur Cavallari",
+    "github": "arthurcavallari"
+  },
+  "license": "MIT",
+  "pricing": "free",
+  "categories": ["telemetry", "productivity"],
+  "capabilityTier": "TIER_1_TELEMETRY",
+  "workspaceTriggers": {
+    "files": ["*"]
+  },
+  "minAntigravityVersion": "2.0.0"
+}
