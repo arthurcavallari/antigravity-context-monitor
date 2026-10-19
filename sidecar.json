@@ -1,0 +1,24 @@
+{
+  "command": "node",
+  "args": [
+    "server.mjs"
+  ],
+  "display_name": "Context Monitor",
+  "description": "Live context telemetry, working-memory gauge, compaction risk, MCP control plane, and diagnostics sidecar for Google Antigravity.",
+  "has_web_ui": true,
+  "restart_policy": "always",
+  "ui_config": {
+    "display_name": "Context Monitor",
+    "views": [
+      {
+        "entrypoint": "SIDECAR_UI_ENTRYPOINT_AUX_PANE",
+        "path": "/",
+        "title": "Context Monitor"
+      }
+    ]
+  },
+  "agent_permissions": {
+    "workspace_uris": [],
+    "allows_user_interactions": true
+  }
+}

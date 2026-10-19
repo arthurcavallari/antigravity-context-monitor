@@ -1,0 +1,21 @@
+{
+  "name": "antigravity-context-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Real-time context window breakdown, prompt & thinking effort advisor, MCP server controller, and 5h/weekly quota telemetry sidecar for Google Antigravity.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arthurcavallari/antigravity-context-monitor.git"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "setup": "node setup.mjs",
+    "uninstall": "node setup.mjs --uninstall",
+    "test": "node --test test/*.test.mjs"
+  }
+}
