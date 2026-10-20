@@ -45,7 +45,10 @@ function resolvePermanentLinkSource(sourceDir) {
   rmSync(destDir, { recursive: true, force: true });
   cpSync(sourceDir, destDir, {
     recursive: true,
-    filter: (src) => !/[\\/]\.git([\\/]|$)|[\\/]node_modules([\\/]|$)/.test(src),
+    filter: (src) => {
+      const rel = src.slice(sourceDir.length);
+      return !/[\\/]\.git([\\/]|$)|[\\/]node_modules([\\/]|$)/.test(rel);
+    },
   });
   return realpathSync(destDir);
 }
@@ -72,13 +75,22 @@ function removeLinkOrDir(targetPath) {
 async function callManageSidecar(action) {
   const { lsAddress, csrfToken } = getLsConfig();
   if (!lsAddress || !csrfToken) {
-    return { notified: false, reason: 'ANTIGRAVITY_LS_ADDRESS not set' };
+    return {
+      notified: false,
+      reason: 'linked & enabled in config.json — select Context Monitor in the Antigravity Auxiliary Pane',
+    };
   }
   const body = await callLsRpc('ManageSidecar', { action, sidecarId: SIDECAR_ID });
   return { notified: true, body };
 }
 
 async function main() {
+  const nodeMajor = Number.parseInt(process.versions.node.split('.')[0], 10);
+  if (nodeMajor < 20) {
+    throw new Error(
+      `Node.js >= 20.0.0 is required (current: ${process.version}). Switch Node versions (e.g. "nvm use 22") and try again.`
+    );
+  }
   console.log(`[${SIDECAR_ID}] Sidecar directory : ${SIDECAR_DIR}`);
   console.log(`[${SIDECAR_ID}] Repository root   : ${REPO_ROOT}`);
 
