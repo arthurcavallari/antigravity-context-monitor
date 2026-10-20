@@ -30,6 +30,7 @@
           '--cm-border-solid', '--cm-text', '--cm-muted', '--cm-accent', '--cm-hover',
         ];
         for (const k of fallbackKeys) root.style.removeProperty(k);
+        lastThemeSig = '';
       }
       if (cv['--font-family'] || cv['--vscode-font-family']) {
         root.style.setProperty('--vscode-font-family', cv['--vscode-font-family'] || cv['--font-family']);
