@@ -20,7 +20,7 @@ import {
   readJsonFile,
   writeJsonFile,
 } from './lib/constants.mjs';
-import { callLsRpc, getLsConfig } from './lib/rpc-client.mjs';
+import { callLsRpc, getLsConfig, killSidecarProcessByPortOrPid } from './lib/rpc-client.mjs';
 
 const __dirname = realpathSync(dirname(fileURLToPath(import.meta.url)));
 const SIDECAR_DIR = __dirname;
@@ -186,9 +186,15 @@ async function main() {
       reason: err.message,
     }));
   }
+  if (!rpcRes.notified) {
+    const killed = killSidecarProcessByPortOrPid(SIDECAR_ID);
+    if (killed.restarted) {
+      rpcRes = { notified: true, viaProcessRestart: killed.method };
+    }
+  }
   console.log(
     rpcRes.notified
-      ? `[${SIDECAR_ID}] Enabled and started via Language Server RPC.`
+      ? `[${SIDECAR_ID}] Enabled and restarted (${rpcRes.viaProcessRestart || 'Language Server RPC'}).`
       : `[${SIDECAR_ID}] Setup complete (${rpcRes.reason || 'ready'}).`
   );
 }
