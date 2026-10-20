@@ -4,6 +4,41 @@
   "type": "module",
   "description": "Real-time context window breakdown, prompt & thinking effort advisor, MCP server controller, and 5h/weekly quota telemetry sidecar for Google Antigravity.",
   "license": "MIT",
+  "author": {
+    "name": "Arthur Cavallari",
+    "url": "https://github.com/arthurcavallari"
+  },
+  "homepage": "https://github.com/arthurcavallari/antigravity-context-monitor#readme",
+  "bugs": {
+    "url": "https://github.com/arthurcavallari/antigravity-context-monitor/issues"
+  },
+  "files": [
+    "sidecar.json",
+    "hub-manifest.json",
+    "server.mjs",
+    "setup.mjs",
+    "lib",
+    "ui",
+    "test"
+  ],
+  "keywords": [
+    "antigravity",
+    "google-antigravity",
+    "agy",
+    "agy-plugin",
+    "antigravity-sidecar",
+    "antigravity-plugin",
+    "antigravity-extension",
+    "antigravity-ide",
+    "sidecar",
+    "context-window",
+    "context-management",
+    "llm-telemetry",
+    "token-usage",
+    "mcp",
+    "gemini",
+    "observability"
+  ],
   "bin": {
     "antigravity-context-monitor": "./setup.mjs",
     "agy-context-monitor": "./setup.mjs"

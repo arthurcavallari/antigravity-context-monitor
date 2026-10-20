@@ -37,18 +37,21 @@ Mounts natively in Antigravity's Auxiliary (right-hand) Pane (`SIDECAR_UI_ENTRYP
 
 ## Installation
 
+### Option A: 1-Click Install via Antigravity Hangar (Recommended)
+
+If you use [**Antigravity Hangar**](https://github.com/arthurcavallari/antigravity-hangar) (`npx antigravity-hangar`), open the **`🧩 Extensions -> Discover`** tab inside Hangar and click **Install** on **Context & Quota Monitor**—or keep it pinned in Hangar's top split-pane while switching between project-specific sidecars below in `0ms`.
+
+### Option B: Standalone CLI (`npx` or `git clone`)
+
 ```bash
-# Option A: 1-command install via npx
+# 1-command install via npx
 npx antigravity-context-monitor
 
-# Option B: Clone and link locally
+# Or clone and link locally
 git clone https://github.com/arthurcavallari/antigravity-context-monitor.git
 cd antigravity-context-monitor
 npm run setup
 ```
-
-> **Tip — Pin Context Monitor in a Split-Pane Above Other Sidecars**:
-> Install [**Antigravity Hangar**](https://github.com/arthurcavallari/antigravity-hangar) (`npx antigravity-hangar`) to keep **Context Monitor** pinned in a top split-pane while switching between project-specific sidecars below in `0ms`.
 
 What `setup` does:
 1. Validates all required sidecar manifest, backend, and UI assets.
