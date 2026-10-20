@@ -50,6 +50,9 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "dependencies": {
+    "antigravity-sidecar-kit": "^1.0.0"
+  },
   "scripts": {
     "start": "node server.mjs",
     "setup": "node setup.mjs",

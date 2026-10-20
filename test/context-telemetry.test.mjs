@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { resolveModelMetadata, selectActiveTrajectory } from '../lib/session-resolver.mjs';
 import { computeContextTelemetry, fetchFullTelemetry } from '../lib/context-telemetry.mjs';
 import {
@@ -271,6 +273,7 @@ test('fetchFullTelemetry orchestrates all RPCs and resolves theme and planUsage 
   const full = await fetchFullTelemetry({
     lsAddress: '127.0.0.1:59999',
     csrfToken: 'mock-csrf',
+    configPath: join(tmpdir(), 'nonexistent-agy-config.json'),
     fetchFn: async () => ({
       ok: true,
       status: 200,

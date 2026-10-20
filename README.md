@@ -31,7 +31,7 @@ Mounts natively in Antigravity's Auxiliary (right-hand) Pane (`SIDECAR_UI_ENTRYP
 ## Requirements
 
 - **Google Antigravity** (2.0 Desktop / IDE with `SidecarManager` support)
-- **Node.js** `>= 20.0.0` (zero external npm dependencies; uses built-in `sidecar_sdk` injected by Antigravity)
+- **Node.js** `>= 20.0.0` (zero third-party npm dependencies; powered by [`antigravity-sidecar-kit`](https://github.com/arthurcavallari/antigravity-sidecar-kit) and Antigravity's built-in `sidecar_sdk`)
 
 ---
 
@@ -89,8 +89,6 @@ antigravity-context-monitor/
 ├── server.mjs                    # Thin SidecarApp routing entrypoint
 ├── lib/
 │   ├── constants.mjs             # Ceilings, category metadata & JSON config helpers
-│   ├── theme.mjs                 # Host theme seed resolver, contrast detector & CSS proxy
-│   ├── rpc-client.mjs            # Connect RPC client for Antigravity Language Server
 │   ├── session-resolver.mjs      # Active trajectory selection & model metadata resolution
 │   ├── context-telemetry.mjs     # Context window breakdown & telemetry orchestrator
 │   ├── turn-insights.mjs         # Turn performance metrics & customization token budgets
@@ -115,8 +113,7 @@ antigravity-context-monitor/
     ├── plan-quota.test.mjs
     ├── turn-insights.test.mjs
     ├── effort-advisor.test.mjs
-    ├── mcp-diagnostics.test.mjs
-    └── theme.test.mjs
+    └── mcp-diagnostics.test.mjs
 ```
 
 ---

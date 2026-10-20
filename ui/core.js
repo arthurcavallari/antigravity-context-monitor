@@ -19,7 +19,7 @@
     if (!theme) return;
     const root = document.documentElement;
     const cv = theme.cssVariables;
-    if (cv && typeof cv === 'object') {
+    if (cv && typeof cv === 'object' && !theme.vars) {
       if (cv['--background'] || cv['--foreground']) {
         root.dataset.theme = theme.themeType === 'light' || theme.isDark === false ? 'light' : 'dark';
         for (const [k, v] of Object.entries(cv)) {
