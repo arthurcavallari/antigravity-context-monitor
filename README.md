@@ -37,18 +37,23 @@ Mounts natively in Antigravity's Auxiliary (right-hand) Pane (`SIDECAR_UI_ENTRYP
 
 ## Installation
 
-Clone the repository anywhere on your machine and run the setup script:
-
 ```bash
+# Option A: 1-command install via npx
+npx antigravity-context-monitor
+
+# Option B: Clone and link locally
 git clone https://github.com/arthurcavallari/antigravity-context-monitor.git
 cd antigravity-context-monitor
 npm run setup
 ```
 
-What `npm run setup` does:
+> **Tip — Pin Context Monitor in a Split-Pane Above Other Sidecars**:
+> Install [**Antigravity Hangar**](https://github.com/arthurcavallari/antigravity-hangar) (`npx antigravity-hangar`) to keep **Context Monitor** pinned in a top split-pane while switching between project-specific sidecars below in `0ms`.
+
+What `setup` does:
 1. Validates all required sidecar manifest, backend, and UI assets.
 2. Runs the unit test suite (`npm test`).
-3. Links `~/.gemini/config/sidecars/context-monitor` to your repository checkout (using an NTFS directory junction on Windows or directory symlink on macOS/Linux).
+3. Links `~/.gemini/config/sidecars/context-monitor` to your package checkout (using an NTFS directory junction on Windows or directory symlink on macOS/Linux, copying out of ephemeral `_npx` caches automatically).
 4. Enables `sidecars["context-monitor"]` in `~/.gemini/config/config.json` (preserving any existing `projectId` and writing UTF-8 without BOM).
 5. Hot-reloads the sidecar via the Language Server `ManageSidecar` RPC when invoked inside an active Antigravity session.
 
@@ -58,7 +63,7 @@ What `npm run setup` does:
 npm run uninstall
 ```
 
-Removes the `~/.gemini/config/sidecars/context-monitor` link, cleans up the entry in `~/.gemini/config/config.json`, and disables the sidecar via RPC.
+Removes the `~/.gemini/config/sidecars/context-monitor` link, sets `sidecars["context-monitor"].enabled = false` in `~/.gemini/config/config.json` (preserving `projectId`), and disables the sidecar via RPC.
 
 ---
 

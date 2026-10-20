@@ -1,10 +1,13 @@
 {
   "name": "antigravity-context-monitor",
   "version": "1.0.0",
-  "private": true,
   "type": "module",
   "description": "Real-time context window breakdown, prompt & thinking effort advisor, MCP server controller, and 5h/weekly quota telemetry sidecar for Google Antigravity.",
   "license": "MIT",
+  "bin": {
+    "antigravity-context-monitor": "./setup.mjs",
+    "agy-context-monitor": "./setup.mjs"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/arthurcavallari/antigravity-context-monitor.git"

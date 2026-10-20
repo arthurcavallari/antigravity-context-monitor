@@ -1,5 +1,7 @@
+#!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -8,6 +10,7 @@ import {
   symlinkSync,
   unlinkSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -25,10 +28,27 @@ const SIDECAR_DIR = __dirname;
 const GLOBAL_CONFIG_DIR = dirname(DEFAULT_CONFIG_PATH);
 const GLOBAL_SIDECARS_DIR = join(GLOBAL_CONFIG_DIR, 'sidecars');
 const JUNCTION_PATH = join(GLOBAL_SIDECARS_DIR, SIDECAR_ID);
+const HANGAR_PACKAGES_DIR = join(homedir(), '.gemini', 'hangar', 'packages');
 
 const args = new Set(process.argv.slice(2));
 const isUninstall = args.has('--uninstall');
 const skipTests = args.has('--skip-tests');
+
+function resolvePermanentLinkSource(sourceDir) {
+  if (!/[\\/]_npx[\\/]|[\\/]node_modules[\\/]/i.test(sourceDir)) {
+    return sourceDir;
+  }
+  const pkgJson = readJsonFile(join(sourceDir, 'package.json'));
+  const ver = String(pkgJson.version || '1.0.0').replace(/[^a-z0-9._-]+/gi, '');
+  const destDir = join(HANGAR_PACKAGES_DIR, `${SIDECAR_ID}@${ver}`);
+  mkdirSync(HANGAR_PACKAGES_DIR, { recursive: true });
+  rmSync(destDir, { recursive: true, force: true });
+  cpSync(sourceDir, destDir, {
+    recursive: true,
+    filter: (src) => !/[\\/]\.git([\\/]|$)|[\\/]node_modules([\\/]|$)/.test(src),
+  });
+  return realpathSync(destDir);
+}
 
 function removeLinkOrDir(targetPath) {
   let stat;
@@ -74,8 +94,8 @@ async function main() {
     }
     if (existsSync(DEFAULT_CONFIG_PATH)) {
       const cfg = readJsonFile(DEFAULT_CONFIG_PATH);
-      if (cfg.sidecars && typeof cfg.sidecars === 'object') {
-        delete cfg.sidecars[SIDECAR_ID];
+      if (cfg.sidecars && typeof cfg.sidecars === 'object' && cfg.sidecars[SIDECAR_ID]) {
+        cfg.sidecars[SIDECAR_ID].enabled = false;
       }
       writeJsonFile(DEFAULT_CONFIG_PATH, cfg);
     }
@@ -121,12 +141,13 @@ async function main() {
     );
   }
 
+  const targetSourceDir = resolvePermanentLinkSource(SIDECAR_DIR);
   mkdirSync(GLOBAL_SIDECARS_DIR, { recursive: true });
   const alreadyLinked =
-    existsSync(JUNCTION_PATH) && realpathSync(JUNCTION_PATH) === SIDECAR_DIR;
+    existsSync(JUNCTION_PATH) && realpathSync(JUNCTION_PATH) === targetSourceDir;
   if (!alreadyLinked) {
     removeLinkOrDir(JUNCTION_PATH);
-    symlinkSync(SIDECAR_DIR, JUNCTION_PATH, process.platform === 'win32' ? 'junction' : 'dir');
+    symlinkSync(targetSourceDir, JUNCTION_PATH, process.platform === 'win32' ? 'junction' : 'dir');
   }
   console.log(`[${SIDECAR_ID}] Linked ${JUNCTION_PATH} -> ${realpathSync(JUNCTION_PATH)}`);
 
