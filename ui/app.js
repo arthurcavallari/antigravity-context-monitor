@@ -20,6 +20,7 @@
 
   const POLL_INTERVAL_MS = 1500;
 const PULSE_HOLD_MS = 2500;
+const ACTION_MSG_MS = 4000;
 const DRAWER_TOGGLES = {
   '#model-badge-btn': 'modelProfileOpen',
   '#context-help-btn': 'contextHelpOpen',
@@ -42,6 +43,9 @@ const state = {
 const appRoot = document.getElementById('app');
 let telemetrySeq = 0;
 let telemetryInFlight = false;
+let pollTimer = 0;
+let actionMsgTimer = 0;
+let pendingConfirm = { key: '', until: 0 };
 
 function ensureShellMounted() {
   if (!appRoot || document.getElementById('card-tab-slot')) return;
@@ -49,6 +53,7 @@ function ensureShellMounted() {
     <section class="context-card">
       <div id="card-header-slot"></div>
       <div id="card-tab-slot" class="tab-slot"></div>
+      <div id="action-msg-slot"></div>
       <footer class="session-bar">
         <select id="session-select" class="session-select" title="Sync with active chat tab or pin a session"></select>
         <span id="telemetry-pill" class="telemetry-pill" title="Exact API turn telemetry: input_tokens + cache_read_tokens (cache hit %)"></span>
@@ -78,6 +83,36 @@ function computeTabBodyHtml() {
   });
 }
 
+function showActionMessage(text, isError = true) {
+  const slot = document.getElementById('action-msg-slot');
+  if (!slot) return;
+  slot.innerHTML = `<div class="${isError ? 'error-banner' : 'loading-state'} action-msg">${esc(text)}</div>`;
+  clearTimeout(actionMsgTimer);
+  actionMsgTimer = setTimeout(() => { slot.innerHTML = ''; }, ACTION_MSG_MS);
+}
+
+// Sandboxed iframes without allow-modals make confirm() return false instantly; fall back to click-again
+function confirmAction(key, message) {
+  const startedAt = performance.now();
+  if (window.confirm(message)) return true;
+  if (performance.now() - startedAt > 50) return false;
+  if (pendingConfirm.key === key && Date.now() < pendingConfirm.until) {
+    pendingConfirm = { key: '', until: 0 };
+    return true;
+  }
+  pendingConfirm = { key, until: Date.now() + ACTION_MSG_MS };
+  showActionMessage(`${message} Click again to confirm.`, false);
+  return false;
+}
+
+async function runAction(failureText, path, body) {
+  try {
+    await apiCall(path, body);
+  } catch (err) {
+    showActionMessage(`${failureText}: ${err.message}`);
+  }
+}
+
 async function handleMcpToggle(btn) {
   const serverName = btn.getAttribute('data-server');
   const next = btn.getAttribute('data-enabled') !== '1';
@@ -100,7 +135,7 @@ async function handleMcpToggle(btn) {
     }
     state.lastTabHtml = computeTabBodyHtml();
   }
-  await apiCall('/api/mcp/toggle', { serverName, enabled: next }).catch(() => {});
+  await runAction(`Could not ${next ? 'enable' : 'disable'} ${serverName}`, '/api/mcp/toggle', { serverName, enabled: next });
   await refreshTelemetry(false);
 }
 
@@ -140,14 +175,14 @@ async function handleAppClick(e) {
     return;
   }
   if (target.closest('#mcp-refresh-all-btn')) {
-    await apiCall('/api/mcp/refresh', {}).catch(() => {});
+    await runAction('Could not refresh MCP servers', '/api/mcp/refresh', {});
     await refreshTelemetry(true);
     return;
   }
   const mcpRefreshBtn = target.closest('.mcp-refresh-btn');
   if (mcpRefreshBtn) {
     const serverName = mcpRefreshBtn.getAttribute('data-server');
-    if (serverName) { await apiCall('/api/mcp/refresh', { serverName }).catch(() => {}); await refreshTelemetry(true); }
+    if (serverName) { await runAction(`Could not refresh ${serverName}`, '/api/mcp/refresh', { serverName }); await refreshTelemetry(true); }
     return;
   }
   const mcpToggleBtn = target.closest('.mcp-toggle-btn');
@@ -175,13 +210,21 @@ async function handleAppClick(e) {
   const termKillBtn = target.closest('.term-kill-btn');
   if (termKillBtn) {
     const terminalId = termKillBtn.getAttribute('data-terminal-id');
-    if (terminalId) { await apiCall('/api/terminals/close', { terminalId }).catch(() => {}); await refreshDiagnostics(); }
+    const term = (state.diagData?.terminals || []).find((t) => t.terminalId === terminalId);
+    if (terminalId && confirmAction(`kill:${terminalId}`, `Terminate "${term?.title || 'terminal'}" (PID ${term?.pid || '?'})?`)) {
+      await runAction('Could not terminate terminal', '/api/terminals/close', { terminalId });
+      await refreshDiagnostics();
+    }
     return;
   }
   const sidecarRestartBtn = target.closest('.sidecar-restart-btn');
   if (sidecarRestartBtn) {
     const sidecarId = sidecarRestartBtn.getAttribute('data-sidecar-id');
-    if (sidecarId) { await apiCall('/api/sidecars/restart', { sidecarId }).catch(() => {}); await refreshDiagnostics(); }
+    const sidecar = (state.diagData?.sidecars || []).find((s) => s.sidecarId === sidecarId);
+    if (sidecarId && confirmAction(`restart:${sidecarId}`, `Restart ${sidecar?.displayName || sidecarId}?`)) {
+      await runAction('Could not restart sidecar', '/api/sidecars/restart', { sidecarId });
+      await refreshDiagnostics();
+    }
   }
 }
 
@@ -285,6 +328,20 @@ window.addEventListener('message', (e) => {
     refreshTelemetry(false);
   }
 });
+function pollTick() {
   refreshTelemetry(false);
-  setInterval(() => { refreshTelemetry(false); if (state.activeTab === 'diagnostics') refreshDiagnostics(); }, POLL_INTERVAL_MS);
+  if (state.activeTab === 'diagnostics') refreshDiagnostics();
+}
+
+// Pause polling while the pane is hidden; refresh immediately once it is visible again
+function syncPolling() {
+  clearInterval(pollTimer);
+  pollTimer = 0;
+  if (document.hidden) return;
+  pollTick();
+  pollTimer = setInterval(pollTick, POLL_INTERVAL_MS);
+}
+
+document.addEventListener('visibilitychange', syncPolling);
+  syncPolling();
 })();

@@ -121,6 +121,41 @@ test('analyzeModelAndEffortFit: flags unused_effort and recommends lighter model
   assert.equal(res.latestTurnFit.promptPreview, 'yes');
 });
 
+test('analyzeModelAndEffortFit: skips unused_effort when no invocation reported thinkingOutputTokens', () => {
+  const modelConfig = {
+    clientModelConfigs: [
+      {
+        label: 'Claude Opus 5.5 (High)',
+        modelId: 'claude-opus-5-5-high',
+        modelOrAlias: { model: 'MODEL_PLACEHOLDER_M402' },
+      },
+    ],
+  };
+  const steps = [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'explain the cache' } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' },
+  ];
+  const genMetaFor = (usage) => [
+    { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M402', timeToFirstToken: '3.2s', usage } },
+  ];
+
+  // Anthropic Vertex usage omits thinkingOutputTokens entirely: unknown, not zero
+  const unreported = analyzeModelAndEffortFit(
+    genMetaFor({ inputTokens: '20000', outputTokens: '120', apiProvider: 'API_PROVIDER_ANTHROPIC_VERTEX' }),
+    steps,
+    modelConfig
+  );
+  assert.equal(unreported.latestTurnFit.effort, 'High');
+  assert.equal(unreported.latestTurnFit.status, 'optimal');
+
+  const reported = analyzeModelAndEffortFit(
+    genMetaFor({ inputTokens: '20000', outputTokens: '120', thinkingOutputTokens: '45' }),
+    steps,
+    modelConfig
+  );
+  assert.equal(reported.latestTurnFit.status, 'unused_effort');
+});
+
 test('analyzeModelAndEffortFit: flags loop_tax and steps down effort within family', () => {
   const steps = [
     { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'search files and summarize' } },

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveModelMetadata, selectActiveTrajectory } from '../lib/session-resolver.mjs';
 import { computeContextTelemetry, fetchFullTelemetry } from '../lib/context-telemetry.mjs';
+import { clearRpcCache } from '../lib/rpc-cache.mjs';
 import {
   GEMINI_CONTEXT_CEILING,
   GEMINI_NATIVE_CEILING,
@@ -286,3 +287,36 @@ test('fetchFullTelemetry orchestrates all RPCs and resolves theme and planUsage 
   assert.equal(typeof full.planUsage.aiCredits.useAiCredits, 'boolean');
 });
 
+
+test('fetchFullTelemetry serves slow-changing RPCs from a short TTL cache without caching failures', async () => {
+  const calls = {};
+  let failUserStatus = true;
+  const options = {
+    lsAddress: '127.0.0.1:59997',
+    csrfToken: 'mock-csrf',
+    configPath: join(tmpdir(), 'nonexistent-agy-config.json'),
+    fetchFn: async (url) => {
+      const method = url.slice(url.lastIndexOf('/') + 1);
+      calls[method] = (calls[method] || 0) + 1;
+      if (method === 'GetUserStatus' && failUserStatus) {
+        return { ok: false, status: 503, text: async () => '{}' };
+      }
+      return { ok: true, status: 200, text: async () => '{}' };
+    },
+  };
+
+  await fetchFullTelemetry(options);
+  failUserStatus = false;
+  await fetchFullTelemetry(options);
+  assert.equal(calls.GetAllCascadeTrajectories, 2);
+  assert.equal(calls.GetMcpServerStates, 2);
+  assert.equal(calls.GetCascadeModelConfigData, 1);
+  assert.equal(calls.GetCustomizationStates, 1);
+  assert.equal(calls.RetrieveUserQuotaSummary, 1);
+  assert.equal(calls.GetUserStatus, 2);
+
+  clearRpcCache();
+  await fetchFullTelemetry(options);
+  assert.equal(calls.GetCustomizationStates, 2);
+  assert.equal(calls.GetUserStatus, 3);
+});

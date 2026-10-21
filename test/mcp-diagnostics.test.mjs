@@ -1,7 +1,83 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractDiagnosticLogs, MAX_DIAGNOSTIC_LOG_LINES } from '../lib/diagnostics.mjs';
-import { buildMcpAndCustomizationsCatalog } from '../lib/mcp-manager.mjs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  classifyLogLine,
+  extractDiagnosticLogs,
+  normalizeTerminals,
+  MAX_DIAGNOSTIC_LOG_LINES,
+} from '../lib/diagnostics.mjs';
+import { buildMcpAndCustomizationsCatalog, toggleMcpServerState } from '../lib/mcp-manager.mjs';
+
+test('classifyLogLine uses the glog severity prefix instead of substring or timestamp matches', () => {
+  const level = (line) => classifyLogLine(line).level;
+  assert.equal(level('Found 3 MCP servers'), 'info');
+  assert.equal(level('Fetching quota summary'), 'info');
+  assert.equal(level('I1020 10:04:31.429117 ...'), 'info');
+  assert.equal(level('0 errors, 0 warnings'), 'info');
+  assert.equal(level('I1020 10:04:31.429117   4242 client.go:429] connected'), 'info');
+  assert.equal(level('W1020 10:04:31.429117 4242 cache.go:88] cache miss'), 'warn');
+  assert.equal(level('E1020 10:04:31.429117 4242 server.go:12] dial tcp: connection refused'), 'error');
+  assert.equal(level('F1020 10:04:31.429117 4242 main.go:7] unrecoverable state'), 'error');
+  // Rate limits in the message body still surface as errors
+  assert.equal(level('I1020 10:04:31.429117 4242 model.go:51] got HTTP 429, retrying'), 'error');
+  assert.equal(level('rpc error: code = ResourceExhausted desc = RESOURCE_EXHAUSTED'), 'error');
+});
+
+test('normalizeTerminals decodes POSIX and Windows file URIs and falls back to the raw string', () => {
+  const uris = normalizeTerminals({
+    terminals: [
+      { workspaceUri: 'file:///home/x/my%20proj' },
+      { workspaceUri: 'file:///c%3A/Users/arthu/My%20Repo' },
+      { workspaceUri: 'file://build-server/share' },
+      { workspaceUri: 'vscode-remote://wsl+Ubuntu/home/x' },
+      {},
+    ],
+  }).map((t) => t.workspaceUri);
+  assert.deepEqual(uris, [
+    '/home/x/my proj',
+    'c:\\Users\\arthu\\My Repo',
+    'file://build-server/share',
+    'vscode-remote://wsl+Ubuntu/home/x',
+    '',
+  ]);
+});
+
+test('toggleMcpServerState rejects non-object mcp_config.json entries instead of throwing a TypeError', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cm-mcp-'));
+  const configPath = join(dir, 'mcp_config.json');
+  writeFileSync(configPath, JSON.stringify({ mcpServers: { broken: null, text: 'oops', ok: { command: 'x' } } }));
+  const options = {
+    lsAddress: '127.0.0.1:59998',
+    csrfToken: 'mock-csrf',
+    fetchFn: async (url) => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify(
+          url.endsWith('/GetMcpServerStates')
+            ? { states: ['broken', 'text', 'ok'].map((serverName) => ({ spec: { serverName, configPath } })) }
+            : {}
+        ),
+    }),
+  };
+
+  try {
+    await assert.rejects(toggleMcpServerState('broken', true, options), /Could not update MCP server "broken"/);
+    await assert.rejects(toggleMcpServerState('text', false, options), /Could not update MCP server "text"/);
+    const res = await toggleMcpServerState('ok', false, options);
+    assert.equal(res.source, 'plugin-config');
+    assert.deepEqual(JSON.parse(readFileSync(configPath, 'utf8')).mcpServers, {
+      broken: null,
+      text: 'oops',
+      ok: { command: 'x', disabled: true },
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('extractDiagnosticLogs caps ring buffer at MAX_DIAGNOSTIC_LOG_LINES (80) and classifies severity', () => {
   const manyLines = Array.from(
