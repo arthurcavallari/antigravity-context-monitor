@@ -51,7 +51,7 @@
     "node": ">=20.13.0"
   },
   "dependencies": {
-    "antigravity-sidecar-kit": "^1.0.1"
+    "antigravity-sidecar-kit": "^1.0.2"
   },
   "scripts": {
     "start": "node server.mjs",
