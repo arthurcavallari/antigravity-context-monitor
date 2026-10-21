@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -10,6 +11,7 @@ import {
 } from '../lib/session-resolver.mjs';
 import { computeContextTelemetry, fetchFullTelemetry } from '../lib/context-telemetry.mjs';
 import { clearRpcCache } from '../lib/rpc-cache.mjs';
+import { setAiCreditsOverageSetting } from '../lib/plan-quota.mjs';
 import {
   GEMINI_CONTEXT_CEILING,
   GEMINI_NATIVE_CEILING,
@@ -293,37 +295,122 @@ test('fetchFullTelemetry orchestrates all RPCs and resolves theme and planUsage 
 });
 
 
-test('fetchFullTelemetry serves slow-changing RPCs from a short TTL cache without caching failures', async () => {
+// Fake Language Server: counts calls per method and answers from a mutable trajectory state
+function fakeLs(lsAddress) {
   const calls = {};
-  let failUserStatus = true;
-  const options = {
-    lsAddress: '127.0.0.1:59997',
-    csrfToken: 'mock-csrf',
-    configPath: join(tmpdir(), 'nonexistent-agy-config.json'),
-    fetchFn: async (url) => {
-      const method = url.slice(url.lastIndexOf('/') + 1);
-      calls[method] = (calls[method] || 0) + 1;
-      if (method === 'GetUserStatus' && failUserStatus) {
-        return { ok: false, status: 503, text: async () => '{}' };
-      }
-      return { ok: true, status: 200, text: async () => '{}' };
+  const ls = {
+    calls,
+    fail: new Set(),
+    summary: { stepCount: 10, lastModifiedTime: '2026-10-21T10:00:00Z', status: 'CASCADE_RUN_STATUS_IDLE' },
+    options: {
+      lsAddress,
+      csrfToken: 'mock-csrf',
+      configPath: join(tmpdir(), 'nonexistent-agy-config.json'),
+      hostCascadeId: 'conv-1',
+      fetchFn: async (url) => {
+        const method = url.slice(url.lastIndexOf('/') + 1);
+        calls[method] = (calls[method] || 0) + 1;
+        if (ls.fail.has(method)) return { ok: false, status: 503, text: async () => '{}' };
+        let body = {};
+        if (method === 'GetAllCascadeTrajectories') {
+          body = { trajectorySummaries: { 'conv-1': { summary: 'Conv 1', ...ls.summary } } };
+        } else if (method === 'GetCascadeTrajectorySteps') {
+          body = { steps: Array.from({ length: ls.summary.stepCount }, () => ({ type: 'CORTEX_STEP_TYPE_USER_INPUT' })) };
+        } else if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
+          body = { generatorMetadata: [{ chatModel: { usage: { inputTokens: ls.summary.stepCount * 100 } } }] };
+        }
+        return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+      },
     },
   };
+  return ls;
+}
 
-  await fetchFullTelemetry(options);
-  failUserStatus = false;
-  await fetchFullTelemetry(options);
-  assert.equal(calls.GetAllCascadeTrajectories, 2);
-  assert.equal(calls.GetMcpServerStates, 2);
-  assert.equal(calls.GetCascadeModelConfigData, 1);
-  assert.equal(calls.GetCustomizationStates, 1);
-  assert.equal(calls.RetrieveUserQuotaSummary, 1);
-  assert.equal(calls.GetUserStatus, 2);
+test('fetchFullTelemetry serves reads from the shared TTL cache without caching failures', async () => {
+  const ls = fakeLs('127.0.0.1:59997');
+  ls.fail.add('GetUserStatus');
+  await fetchFullTelemetry(ls.options);
+  ls.fail.clear();
+  await fetchFullTelemetry(ls.options);
+  for (const m of [
+    'GetAllCascadeTrajectories',
+    'GetMcpServerStates',
+    'GetCascadeModelConfigData',
+    'GetCustomizationStates',
+    'RetrieveUserQuotaSummary',
+  ]) {
+    assert.equal(ls.calls[m], 1, m);
+  }
+  assert.equal(ls.calls.GetUserStatus, 2);
 
   clearRpcCache();
-  await fetchFullTelemetry(options);
-  assert.equal(calls.GetCustomizationStates, 2);
-  assert.equal(calls.GetUserStatus, 3);
+  await fetchFullTelemetry(ls.options);
+  assert.equal(ls.calls.GetCustomizationStates, 2);
+  assert.equal(ls.calls.GetUserStatus, 3);
+});
+
+test('concurrent telemetry polls from several iframes share one request per RPC', async () => {
+  const ls = fakeLs('127.0.0.1:59996');
+  const results = await Promise.all([1, 2, 3].map(() => fetchFullTelemetry(ls.options)));
+  assert.ok(Object.keys(ls.calls).length >= 8);
+  for (const [method, n] of Object.entries(ls.calls)) assert.equal(n, 1, method);
+  assert.equal(results[2].context.totalUsedTokens, 1000);
+  assert.equal(results[0].session.cascadeId, 'conv-1');
+});
+
+test('steps and generator metadata are only re-fetched when the trajectory changes', async () => {
+  const ls = fakeLs('127.0.0.1:59995');
+  const first = await fetchFullTelemetry(ls.options);
+  assert.equal(first.context.totalUsedTokens, 1000);
+
+  // GetAllCascadeTrajectories refreshes (cache expired) but nothing changed: no detail re-fetch
+  clearRpcCache();
+  await fetchFullTelemetry(ls.options);
+  assert.equal(ls.calls.GetAllCascadeTrajectories, 2);
+  assert.equal(ls.calls.GetCascadeTrajectorySteps, 1);
+  assert.equal(ls.calls.GetCascadeTrajectoryGeneratorMetadata, 1);
+
+  // Each of step count, last-modified time and status counts as a change
+  const changes = [
+    { stepCount: 11 },
+    { lastModifiedTime: '2026-10-21T10:00:05Z' },
+    { status: 'CASCADE_RUN_STATUS_RUNNING' },
+  ];
+  for (const [i, change] of changes.entries()) {
+    Object.assign(ls.summary, change);
+    clearRpcCache();
+    const res = await fetchFullTelemetry(ls.options);
+    assert.equal(ls.calls.GetCascadeTrajectorySteps, 2 + i);
+    assert.equal(res.context.totalUsedTokens, ls.summary.stepCount * 100);
+  }
+  assert.equal(ls.calls.GetCascadeTrajectoryGeneratorMetadata, 4);
+
+  // A failed detail fetch is retried on the next poll even though the trajectory did not change
+  ls.summary.stepCount = 12;
+  ls.fail.add('GetCascadeTrajectorySteps');
+  clearRpcCache();
+  await fetchFullTelemetry(ls.options);
+  ls.fail.clear();
+  const retried = await fetchFullTelemetry(ls.options);
+  assert.equal(ls.calls.GetCascadeTrajectorySteps, 6);
+  assert.equal(retried.context.totalUsedTokens, 1200);
+});
+
+test('toggling AI credits invalidates the cached quota and user status', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cm-credits-'));
+  try {
+    const ls = fakeLs('127.0.0.1:59994');
+    const configPath = join(dir, 'config.json');
+    writeFileSync(configPath, '{}', 'utf8');
+    await fetchFullTelemetry(ls.options);
+    await setAiCreditsOverageSetting(true, { ...ls.options, configPath });
+    await fetchFullTelemetry(ls.options);
+    assert.equal(ls.calls.GetUserStatus, 2);
+    assert.equal(ls.calls.RetrieveUserQuotaSummary, 2);
+    assert.equal(ls.calls.JetboxWriteState, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('formatTokenCount and formatCeilingCount roll over to M instead of 1000.0k', () => {

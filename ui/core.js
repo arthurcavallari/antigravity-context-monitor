@@ -82,8 +82,30 @@
     return data;
   }
 
+  // Poll fast while an agent is executing (or logs are tailing), slowly while idle
+  const POLL_FAST_MS = 1500;
+  const POLL_IDLE_MS = 5000;
+
+  function nextPollDelayMs({ isExecuting = false, activeTab = '' } = {}) {
+    return isExecuting || activeTab === 'diagnostics' ? POLL_FAST_MS : POLL_IDLE_MS;
+  }
+
+  // A host that hides this frame with CSS (Hangar's deck) posts
+  // { type: 'sidecar-visibility', payload: { visible } }; document.hidden stays false there
+  const VISIBILITY_MESSAGE_TYPE = 'sidecar-visibility';
+
+  function readHostVisibility(data) {
+    if (data?.type !== VISIBILITY_MESSAGE_TYPE || typeof data?.payload?.visible !== 'boolean') return null;
+    return data.payload.visible;
+  }
+
   Object.assign(window.ContextMonitor, {
     ICONS,
+    POLL_FAST_MS,
+    POLL_IDLE_MS,
+    nextPollDelayMs,
+    VISIBILITY_MESSAGE_TYPE,
+    readHostVisibility,
     applyTheme,
     icon,
     esc,
