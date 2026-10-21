@@ -4,6 +4,7 @@ import {
   analyzeModelAndEffortFit,
   countInvocationRetries,
   measureInvocationThinking,
+  formatThinkingTokens,
 } from '../lib/effort-advisor.mjs';
 
 const MOCK_MODEL_CONFIG = {
@@ -361,4 +362,45 @@ test('analyzeModelAndEffortFit: prioritizes userStep planModel over chatModel.mo
   assert.equal(res.latestTurnFit.effort, 'High');
   assert.equal(res.latestTurnFit.status, 'unused_effort');
   assert.equal(res.recentFlaggedTurns.length, 2);
+});
+
+test('formatThinkingTokens marks estimates and shows sub-margin estimates as <20', () => {
+  assert.equal(formatThinkingTokens(0), '0');
+  assert.equal(formatThinkingTokens(1_500), '1.5k');
+  assert.equal(formatThinkingTokens(0, true), '<20');
+  assert.equal(formatThinkingTokens(19, true), '<20');
+  assert.equal(formatThinkingTokens(20, true), '~20');
+  assert.equal(formatThinkingTokens(2_800, true), '~2.8k');
+});
+
+test('analyzeModelAndEffortFit: estimated thinking needs the error margin below the cut-off', () => {
+  const claudeUsage = (outputTokens) => ({
+    inputTokens: '20000',
+    outputTokens,
+    responseOutputTokens: outputTokens,
+    apiProvider: 'API_PROVIDER_ANTHROPIC_VERTEX',
+  });
+  const thinkingResponse = { response: VISIBLE_RESPONSE, thinking: 'Let me check.', thinkingSignature: 'c2ln' };
+  const fitFor = (outputTokens) => {
+    const turn = singleInvocationTurn({ usage: claudeUsage(outputTokens), plannerResponse: thinkingResponse });
+    return analyzeModelAndEffortFit(turn.genMeta, turn.steps, CLAUDE_HIGH_CONFIG).latestTurnFit;
+  };
+
+  // ~228 estimated thinking: under 240 on its own, but not once the ±20 margin is added
+  assert.equal(fitFor('475').status, 'optimal');
+  // ~208 estimated: clearly under 240 even with the margin
+  assert.equal(fitFor('455').status, 'unused_effort');
+  // A thinking block whose estimate rounds to nothing reads as "<20", not "~0"
+  assert.match(fitFor('250').reason, /^Only needed <20 thinking tokens/);
+});
+
+test('analyzeModelAndEffortFit: exact thinking counts keep the plain cut-off', () => {
+  const turn = singleInvocationTurn({
+    model: 'MODEL_PLACEHOLDER_M73',
+    usage: { inputTokens: '20000', outputTokens: '400', thinkingOutputTokens: '230', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
+    plannerResponse: { response: 'done' },
+  });
+  const fit = analyzeModelAndEffortFit(turn.genMeta, turn.steps, MOCK_MODEL_CONFIG).latestTurnFit;
+  assert.equal(fit.status, 'unused_effort');
+  assert.match(fit.reason, /^Only needed 230 thinking tokens/);
 });

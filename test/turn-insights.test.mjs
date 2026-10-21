@@ -151,6 +151,7 @@ test('extractTurnPerformanceAndBudgets estimates Claude thinking and derives res
   assert.equal(performance.thinkingTokens, 353);
   assert.equal(performance.responseTokens, 247);
   assert.equal(performance.thinkingEstimated, true);
+  assert.equal(performance.formattedThinking, '~353');
   assert.equal(performance.sessionThinkingTokens, 353);
   assert.equal(performance.sessionResponseTokens, 247);
   assert.equal(performance.sessionThinkingEstimated, true);

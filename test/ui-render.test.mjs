@@ -196,10 +196,10 @@ test('renderDiagnosticsLists escapes terminal titles and sidecar errors', () => 
   assert.ok(empty.includes('No sidecars registered'));
 });
 
-test('renderContextTab marks estimated thinking with ~ in the perf strip', () => {
+test('renderContextTab shows the server-formatted estimate and (est.) in the perf strip', () => {
   const perf = {
     formattedResponse: '247',
-    formattedThinking: '353',
+    formattedThinking: '~353',
     thinkingTokens: 353,
     responseTokens: 247,
     thinkingEstimated: true,
@@ -213,7 +213,7 @@ test('renderContextTab marks estimated thinking with ~ in the perf strip', () =>
   const exact = ui.renderContextTab({
     context: {},
     planUsage: {},
-    turnInsights: { performance: { ...perf, thinkingEstimated: false } },
+    turnInsights: { performance: { ...perf, formattedThinking: '353', thinkingEstimated: false } },
   });
   assert.ok(exact.includes('247 / 353'));
   assert.ok(!exact.includes('(est.)'));
