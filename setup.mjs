@@ -29,6 +29,7 @@ runSidecarSetup({
     'test/turn-insights.test.mjs',
     'test/effort-advisor.test.mjs',
     'test/mcp-diagnostics.test.mjs',
+    'test/ui-render.test.mjs',
   ],
 }).catch((err) => {
   console.error(`[${SIDECAR_ID}] Setup failed: ${err.message}`);
