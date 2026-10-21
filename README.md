@@ -31,7 +31,7 @@ Mounts natively in Antigravity's Auxiliary (right-hand) Pane (`SIDECAR_UI_ENTRYP
 ## Requirements
 
 - **Google Antigravity** (2.0 Desktop / IDE with `SidecarManager` support)
-- **Node.js** `>= 20.0.0` (one runtime dependency, [`antigravity-sidecar-kit`](https://github.com/arthurcavallari/antigravity-sidecar-kit), plus Antigravity's built-in `sidecar_sdk`)
+- **Node.js** `>= 20.13.0` (one runtime dependency, [`antigravity-sidecar-kit`](https://github.com/arthurcavallari/antigravity-sidecar-kit), plus Antigravity's built-in `sidecar_sdk`)
 
 ---
 
