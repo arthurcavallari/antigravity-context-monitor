@@ -11,6 +11,7 @@ import {
 } from '../lib/session-resolver.mjs';
 import {
   CONVERSATION_DETAIL_IDLE_MS,
+  FULL_DETAIL_REFRESH_MS,
   clearConversationDetails,
   computeContextTelemetry,
   fetchFullTelemetry,
@@ -300,31 +301,54 @@ test('fetchFullTelemetry orchestrates all RPCs and resolves theme and planUsage 
 });
 
 
-// Fake Language Server: counts calls per method and answers from a mutable trajectory state
+// Fake Language Server: counts calls per method and answers from a mutable conversation. Like the real
+// one it honors stepOffset / generatorMetadataOffset and can cap how many items one response carries.
 function fakeLs(lsAddress, cascadeIds = ['conv-1']) {
   const calls = {};
+  let clock = 0;
+  const step = (status = 'CORTEX_STEP_STATUS_DONE') => ({
+    type: 'CORTEX_STEP_TYPE_USER_INPUT',
+    status,
+    metadata: { createdAt: `2026-10-21T10:${String(clock++).padStart(4, '0')}Z` },
+  });
   const ls = {
     calls,
+    requests: [],
     fail: new Set(),
-    summary: { stepCount: 10, lastModifiedTime: '2026-10-21T10:00:00Z', status: 'CASCADE_RUN_STATUS_IDLE' },
+    pageCap: Infinity,
+    ignoreOffsets: false,
+    step,
+    steps: Array.from({ length: 10 }, () => step()),
+    generators: [{ chatModel: { usage: { inputTokens: 1000 } } }],
+    summary: { lastModifiedTime: '2026-10-21T10:00:00Z', status: 'CASCADE_RUN_STATUS_IDLE' },
+    // Append a turn: new steps plus a generator entry whose usage tracks the step count
+    grow(n = 1, status = 'CORTEX_STEP_STATUS_DONE') {
+      for (let i = 0; i < n; i++) ls.steps.push(step(status));
+      ls.generators.push({ chatModel: { usage: { inputTokens: ls.steps.length * 100 } } });
+      ls.summary.lastModifiedTime = `2026-10-21T11:${String(clock++).padStart(4, '0')}Z`;
+    },
+    offsets: (method) => ls.requests.filter((r) => r.method === method).map((r) => r.offset),
     options: {
       lsAddress,
       csrfToken: 'mock-csrf',
       configPath: join(tmpdir(), 'nonexistent-agy-config.json'),
       hostCascadeId: 'conv-1',
-      fetchFn: async (url) => {
+      fetchFn: async (url, init) => {
         const method = url.slice(url.lastIndexOf('/') + 1);
         calls[method] = (calls[method] || 0) + 1;
+        const req = JSON.parse(init?.body || '{}');
         if (ls.fail.has(method)) return { ok: false, status: 503, text: async () => '{}' };
+        const page = (list, offset) => (ls.ignoreOffsets ? list : list.slice(offset)).slice(0, ls.pageCap);
         let body = {};
         if (method === 'GetAllCascadeTrajectories') {
-          body = {
-            trajectorySummaries: Object.fromEntries(cascadeIds.map((id) => [id, { summary: id, ...ls.summary }])),
-          };
+          const summary = { ...ls.summary, stepCount: ls.steps.length };
+          body = { trajectorySummaries: Object.fromEntries(cascadeIds.map((id) => [id, { summary: id, ...summary }])) };
         } else if (method === 'GetCascadeTrajectorySteps') {
-          body = { steps: Array.from({ length: ls.summary.stepCount }, () => ({ type: 'CORTEX_STEP_TYPE_USER_INPUT' })) };
+          ls.requests.push({ method, offset: req.stepOffset });
+          body = { steps: page(ls.steps, req.stepOffset || 0) };
         } else if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
-          body = { generatorMetadata: [{ chatModel: { usage: { inputTokens: ls.summary.stepCount * 100 } } }] };
+          ls.requests.push({ method, offset: req.generatorMetadataOffset });
+          body = { generatorMetadata: page(ls.generators, req.generatorMetadataOffset || 0) };
         }
         return { ok: true, status: 200, text: async () => JSON.stringify(body) };
       },
@@ -356,51 +380,133 @@ test('fetchFullTelemetry serves reads from the shared TTL cache without caching 
   assert.equal(ls.calls.GetUserStatus, 3);
 });
 
-test('concurrent telemetry polls from several iframes share one request per RPC', async () => {
+test('concurrent telemetry polls from several iframes share one read of each RPC', async () => {
   const ls = fakeLs('127.0.0.1:59996');
   const results = await Promise.all([1, 2, 3].map(() => fetchFullTelemetry(ls.options)));
   assert.ok(Object.keys(ls.calls).length >= 8);
-  for (const [method, n] of Object.entries(ls.calls)) assert.equal(n, 1, method);
+  // Generator metadata has no count in the summary, so its read ends on an empty page
+  assert.deepEqual(ls.offsets('GetCascadeTrajectoryGeneratorMetadata'), [undefined, 1]);
+  for (const [method, n] of Object.entries(ls.calls)) {
+    if (method !== 'GetCascadeTrajectoryGeneratorMetadata') assert.equal(n, 1, method);
+  }
   assert.equal(results[2].context.totalUsedTokens, 1000);
   assert.equal(results[0].session.cascadeId, 'conv-1');
 });
 
-test('steps and generator metadata are only re-fetched when the trajectory changes', async () => {
+test('steps and generator metadata are only re-read when the trajectory changes', async () => {
   const ls = fakeLs('127.0.0.1:59995');
   const first = await fetchFullTelemetry(ls.options);
   assert.equal(first.context.totalUsedTokens, 1000);
 
-  // GetAllCascadeTrajectories refreshes (cache expired) but nothing changed: no detail re-fetch
+  // GetAllCascadeTrajectories refreshes (cache expired) but nothing changed: no detail re-read
   clearRpcCache();
   await fetchFullTelemetry(ls.options);
   assert.equal(ls.calls.GetAllCascadeTrajectories, 2);
   assert.equal(ls.calls.GetCascadeTrajectorySteps, 1);
-  assert.equal(ls.calls.GetCascadeTrajectoryGeneratorMetadata, 1);
 
   // Each of step count, last-modified time and status counts as a change
   const changes = [
-    { stepCount: 11 },
-    { lastModifiedTime: '2026-10-21T10:00:05Z' },
-    { status: 'CASCADE_RUN_STATUS_RUNNING' },
+    () => ls.grow(1),
+    () => (ls.summary.lastModifiedTime = '2026-10-21T12:00:00Z'),
+    () => (ls.summary.status = 'CASCADE_RUN_STATUS_RUNNING'),
   ];
   for (const [i, change] of changes.entries()) {
-    Object.assign(ls.summary, change);
+    change();
     clearRpcCache();
     const res = await fetchFullTelemetry(ls.options);
     assert.equal(ls.calls.GetCascadeTrajectorySteps, 2 + i);
-    assert.equal(res.context.totalUsedTokens, ls.summary.stepCount * 100);
+    assert.equal(res.context.totalUsedTokens, 1100);
   }
-  assert.equal(ls.calls.GetCascadeTrajectoryGeneratorMetadata, 4);
 
-  // A failed detail fetch is retried on the next poll even though the trajectory did not change
-  ls.summary.stepCount = 12;
+  // A failed read keeps what it has and is retried on the next poll even though nothing changed
+  ls.grow(1);
   ls.fail.add('GetCascadeTrajectorySteps');
   clearRpcCache();
-  await fetchFullTelemetry(ls.options);
+  const failed = await fetchFullTelemetry(ls.options);
+  assert.equal(failed.context.totalUsedTokens, 1200, 'generator metadata still updated');
   ls.fail.clear();
-  const retried = await fetchFullTelemetry(ls.options);
-  assert.equal(ls.calls.GetCascadeTrajectorySteps, 6);
-  assert.equal(retried.context.totalUsedTokens, 1200);
+  const before = ls.calls.GetCascadeTrajectorySteps;
+  await fetchFullTelemetry(ls.options);
+  assert.ok(ls.calls.GetCascadeTrajectorySteps > before);
+  clearConversationDetails();
+});
+
+test('after the first read only the steps that can still change are requested', async () => {
+  const ls = fakeLs('127.0.0.1:59991');
+  ls.grow(1, 'CORTEX_STEP_STATUS_RUNNING'); // steps 0-9 done, step 10 running
+  let t = 5_000_000;
+  const poll = () => {
+    clearRpcCache();
+    return fetchFullTelemetry({ ...ls.options, nowMs: (t += 2000) });
+  };
+  await poll();
+  assert.deepEqual(ls.offsets('GetCascadeTrajectorySteps'), [undefined]);
+
+  // Step 10 finishes and step 11 starts: re-read from step 9 (the settled overlap) onwards
+  ls.steps[10].status = 'CORTEX_STEP_STATUS_DONE';
+  ls.grow(1, 'CORTEX_STEP_STATUS_RUNNING');
+  ls.requests.length = 0;
+  const merged = await poll();
+  assert.deepEqual(ls.offsets('GetCascadeTrajectorySteps'), [9]);
+  // The last two generator entries may still be filling in, so they are read again
+  assert.deepEqual(ls.offsets('GetCascadeTrajectoryGeneratorMetadata'), [undefined, 3]);
+  assert.equal(merged.context.totalUsedTokens, 1200);
+
+  // The merged result matches a fresh full read
+  clearConversationDetails();
+  const fresh = await poll();
+  assert.deepEqual(merged.turnInsights, fresh.turnInsights);
+  assert.deepEqual(merged.context, fresh.context);
+  clearConversationDetails();
+});
+
+test('a rewritten history, a shrinking conversation or an old full read falls back to a full read', async () => {
+  const ls = fakeLs('127.0.0.1:59990');
+  let t = 6_000_000;
+  const poll = () => {
+    clearRpcCache();
+    return fetchFullTelemetry({ ...ls.options, nowMs: (t += 2000) });
+  };
+  await poll();
+
+  // Revert: steps from 5 on are replaced, then the agent adds more than were removed
+  ls.steps.splice(5, Infinity, ...Array.from({ length: 7 }, () => ls.step()));
+  ls.grow(0);
+  ls.requests.length = 0;
+  await poll();
+  assert.deepEqual(ls.offsets('GetCascadeTrajectorySteps'), [9, undefined]);
+
+  // Fewer steps than before
+  ls.steps.length = 8;
+  ls.grow(0);
+  ls.requests.length = 0;
+  await poll();
+  assert.deepEqual(ls.offsets('GetCascadeTrajectorySteps'), [undefined]);
+
+  // Long after the last full read, even a plain append is read in full once
+  t += FULL_DETAIL_REFRESH_MS;
+  ls.grow(1);
+  ls.requests.length = 0;
+  await poll();
+  assert.deepEqual(ls.offsets('GetCascadeTrajectorySteps'), [undefined]);
+  clearConversationDetails();
+});
+
+test('reads page through responses the server cut short, and stop if it ignores the offset', async () => {
+  const ls = fakeLs('127.0.0.1:59989');
+  ls.pageCap = 4;
+  for (let i = 0; i < 5; i++) ls.grow(1);
+  const res = await fetchFullTelemetry(ls.options);
+  assert.deepEqual(ls.offsets('GetCascadeTrajectorySteps'), [undefined, 4, 8, 12]);
+  assert.deepEqual(ls.offsets('GetCascadeTrajectoryGeneratorMetadata'), [undefined, 4, 6]);
+  assert.equal(res.context.totalUsedTokens, 1500);
+  clearConversationDetails();
+
+  const old = fakeLs('127.0.0.1:59988');
+  old.ignoreOffsets = true;
+  await fetchFullTelemetry(old.options);
+  assert.equal(old.calls.GetCascadeTrajectoryGeneratorMetadata, 2);
+  clearConversationDetails();
 });
 
 test('frames on different conversations each keep their own details, and unpolled ones are dropped', async () => {
