@@ -1,0 +1,149 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
+
+const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui');
+const UI_SCRIPTS = [
+  'core.js',
+  'components/context-drawers.js',
+  'components/context-tab.js',
+  'components/mcp-budgets-tab.js',
+  'components/diagnostics-tab.js',
+];
+
+const flush = async () => {
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+};
+
+// Manual clock so the test can step through app.js poll scheduling
+function fakeTimers() {
+  let now = 0;
+  let seq = 0;
+  const timers = new Map();
+  return {
+    pending: () => timers.size,
+    setTimeout(fn, ms = 0) {
+      timers.set(++seq, { at: now + ms, fn });
+      return seq;
+    },
+    clearTimeout(id) {
+      timers.delete(id);
+    },
+    async advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        await flush();
+        const [id, next] = [...timers.entries()].sort((a, b) => a[1].at - b[1].at)[0] || [];
+        if (!next || next.at > end) break;
+        now = next.at;
+        timers.delete(id);
+        next.fn();
+      }
+      now = end;
+      await flush();
+    },
+  };
+}
+
+function bootApp() {
+  const timers = fakeTimers();
+  const docListeners = {};
+  const winListeners = {};
+  const parent = {};
+  const host = { executing: false, telemetryCalls: 0 };
+  const document = {
+    hidden: false,
+    getElementById: () => null,
+    addEventListener: (type, fn) => (docListeners[type] = fn),
+    documentElement: { style: { setProperty() {}, removeProperty() {} }, dataset: {} },
+  };
+  const window = {
+    parent,
+    location: { search: '' },
+    addEventListener: (type, fn) => (winListeners[type] = fn),
+  };
+  const ctx = vm.createContext({
+    window,
+    document,
+    URLSearchParams,
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+  });
+  for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+  window.ContextMonitor.apiCall = async (path) => {
+    if (path === '/api/telemetry') host.telemetryCalls++;
+    return { isExecuting: host.executing, session: { cascadeId: 'c1' }, context: { totalUsedTokens: 1 } };
+  };
+  vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+
+  return {
+    ui: window.ContextMonitor,
+    timers,
+    host,
+    document,
+    post: (data) => winListeners.message({ source: parent, data }),
+    fireVisibilityChange: () => docListeners.visibilitychange(),
+  };
+}
+
+test('nextPollDelayMs polls fast while executing or tailing diagnostics, slowly while idle', () => {
+  const ctx = vm.createContext({ window: {} });
+  vm.runInContext(readFileSync(join(UI_DIR, 'core.js'), 'utf8'), ctx);
+  const ui = ctx.window.ContextMonitor;
+  assert.equal(ui.nextPollDelayMs({ isExecuting: true }), ui.POLL_FAST_MS);
+  assert.equal(ui.nextPollDelayMs({ activeTab: 'diagnostics' }), ui.POLL_FAST_MS);
+  assert.equal(ui.nextPollDelayMs({ isExecuting: false, activeTab: 'context' }), ui.POLL_IDLE_MS);
+  assert.ok(ui.POLL_IDLE_MS > ui.POLL_FAST_MS);
+
+  assert.equal(ui.readHostVisibility({ type: 'sidecar-visibility', payload: { visible: false } }), false);
+  assert.equal(ui.readHostVisibility({ type: 'sidecar-visibility', payload: { visible: true } }), true);
+  assert.equal(ui.readHostVisibility({ type: 'sidecar-visibility', payload: { visible: 'no' } }), null);
+  assert.equal(ui.readHostVisibility({ type: 'theme-change', payload: {} }), null);
+});
+
+test('app.js polls adaptively and pauses while Hangar hides the frame', async () => {
+  const app = bootApp();
+  const { POLL_FAST_MS, POLL_IDLE_MS } = app.ui;
+  await app.timers.advance(0);
+  assert.equal(app.host.telemetryCalls, 1);
+
+  // Idle: one poll per POLL_IDLE_MS
+  await app.timers.advance(POLL_IDLE_MS - 1);
+  assert.equal(app.host.telemetryCalls, 1);
+  await app.timers.advance(1);
+  assert.equal(app.host.telemetryCalls, 2);
+
+  // Once a poll reports an executing agent, the next ones come every POLL_FAST_MS
+  app.host.executing = true;
+  await app.timers.advance(POLL_IDLE_MS);
+  assert.equal(app.host.telemetryCalls, 3);
+  await app.timers.advance(POLL_FAST_MS);
+  assert.equal(app.host.telemetryCalls, 4);
+
+  // Hidden in Hangar's deck (document.hidden stays false): no polling at all
+  app.post({ type: 'sidecar-visibility', payload: { visible: false } });
+  await app.timers.advance(60_000);
+  assert.equal(app.host.telemetryCalls, 4);
+  assert.equal(app.timers.pending(), 0);
+
+  // Shown again: refresh at once, then resume the schedule
+  app.post({ type: 'sidecar-visibility', payload: { visible: true } });
+  await app.timers.advance(0);
+  assert.equal(app.host.telemetryCalls, 5);
+  // A repeated "visible" message must not trigger an extra poll
+  app.post({ type: 'sidecar-visibility', payload: { visible: true } });
+  await app.timers.advance(0);
+  assert.equal(app.host.telemetryCalls, 5);
+  await app.timers.advance(POLL_FAST_MS);
+  assert.equal(app.host.telemetryCalls, 6);
+
+  // The whole window hidden: same pause through document.hidden
+  app.document.hidden = true;
+  app.fireVisibilityChange();
+  await app.timers.advance(60_000);
+  assert.equal(app.host.telemetryCalls, 6);
+  assert.equal(app.timers.pending(), 0);
+});

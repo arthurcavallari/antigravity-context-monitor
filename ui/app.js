@@ -16,9 +16,10 @@
     renderMcpBudgetsTab,
     mergeIncomingLogs,
     syncDiagnosticsDom,
+    nextPollDelayMs,
+    readHostVisibility,
   } = window.ContextMonitor;
 
-  const POLL_INTERVAL_MS = 1500;
   const PULSE_HOLD_MS = 2500;
   const ACTION_MSG_MS = 4000;
   const DRAWER_TOGGLES = {
@@ -319,6 +320,10 @@
     }
   }, true);
 
+  // Hangar keeps hidden deck tabs mounted; it tells this frame when it is shown or hidden
+  let hostVisible = true;
+  const isPaneVisible = () => hostVisible && !document.hidden;
+
   window.sidecar?.onWorkspaceChange?.((uris) => { state.workspaceUris = Array.isArray(uris) ? uris : []; refreshTelemetry(false); });
   window.addEventListener('message', (e) => {
     if (e.source !== window.parent) return;
@@ -327,19 +332,33 @@
       state.hostCascadeId = e.data.payload.conversationId;
       refreshTelemetry(false);
     }
+    const visible = readHostVisibility(e.data);
+    if (visible !== null && visible !== hostVisible) {
+      hostVisible = visible;
+      syncPolling();
+    }
   });
-  function pollTick() {
-    refreshTelemetry(false);
-    if (state.activeTab === 'diagnostics') refreshDiagnostics();
+
+  // Only one timer is ever pending: each tick schedules the next once its requests finish
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    pollTimer = 0;
+    if (!isPaneVisible()) return;
+    const delay = nextPollDelayMs({ isExecuting: Boolean(state.latestData?.isExecuting), activeTab: state.activeTab });
+    pollTimer = setTimeout(pollTick, delay);
+  }
+
+  async function pollTick() {
+    pollTimer = 0;
+    await Promise.all([refreshTelemetry(false), state.activeTab === 'diagnostics' ? refreshDiagnostics() : null]);
+    schedulePoll();
   }
 
   // Pause polling while the pane is hidden; refresh immediately once it is visible again
   function syncPolling() {
-    clearInterval(pollTimer);
+    clearTimeout(pollTimer);
     pollTimer = 0;
-    if (document.hidden) return;
-    pollTick();
-    pollTimer = setInterval(pollTick, POLL_INTERVAL_MS);
+    if (isPaneVisible()) pollTick();
   }
 
   document.addEventListener('visibilitychange', syncPolling);

@@ -9,7 +9,12 @@ import {
   normalizeTerminals,
   MAX_DIAGNOSTIC_LOG_LINES,
 } from '../lib/diagnostics.mjs';
-import { buildMcpAndCustomizationsCatalog, toggleMcpServerState } from '../lib/mcp-manager.mjs';
+import {
+  buildMcpAndCustomizationsCatalog,
+  refreshMcpServerState,
+  toggleMcpServerState,
+} from '../lib/mcp-manager.mjs';
+import { callLsRpcCached } from '../lib/rpc-cache.mjs';
 
 test('classifyLogLine uses the glog severity prefix instead of substring or timestamp matches', () => {
   const level = (line) => classifyLogLine(line).level;
@@ -150,4 +155,37 @@ test('buildMcpAndCustomizationsCatalog merges live MCP states, disabled flags, a
   assert.equal(catalog.counts.enabledSkills, 1);
   assert.equal(catalog.counts.totalSkills, 2);
   assert.equal(catalog.counts.enabledRules, 1);
+});
+
+test('MCP toggle and refresh invalidate the cached MCP and customization states', async () => {
+  const calls = {};
+  const options = {
+    lsAddress: '127.0.0.1:59993',
+    csrfToken: 'mock-csrf',
+    fetchFn: async (url) => {
+      const method = url.slice(url.lastIndexOf('/') + 1);
+      calls[method] = (calls[method] || 0) + 1;
+      return { ok: true, status: 200, text: async () => '{}' };
+    },
+  };
+  const read = () =>
+    Promise.all([
+      callLsRpcCached('GetMcpServerStates', {}, options),
+      callLsRpcCached('GetCustomizationStates', {}, options),
+    ]);
+
+  await read();
+  await read();
+  assert.equal(calls.GetMcpServerStates, 1);
+
+  await refreshMcpServerState('', options);
+  await read();
+  assert.equal(calls.GetMcpServerStates, 2);
+  assert.equal(calls.GetCustomizationStates, 2);
+
+  // Not in any MCP config file: goes through ToggleMcpServer (and reads states uncached first)
+  await toggleMcpServerState('some-server', false, options);
+  await read();
+  assert.equal(calls.ToggleMcpServer, 1);
+  assert.equal(calls.GetCustomizationStates, 3);
 });
