@@ -10,8 +10,8 @@
  * list (as heavy as one old-style telemetry poll) plus a few small offset reads, and changes nothing.
  */
 
+// Only the kit's callLsRpc/getLsConfig (in every kit release), so it also runs where the kit is older
 import { callLsRpc, getLsConfig } from 'antigravity-sidecar-kit/rpc';
-import { selectActiveTrajectory } from '../lib/session-resolver.mjs';
 
 const TAIL = 5;
 const OLD_TIMEOUT_MS = 4000;
@@ -54,9 +54,13 @@ async function probeList(method, listField, offsetField, cascadeId, expectedCoun
 
 const { lsAddress } = getLsConfig();
 const trajectories = await callLsRpc('GetAllCascadeTrajectories', {});
-const cascadeId = process.argv[2] || selectActiveTrajectory(trajectories).activeSession?.cascadeId;
+const summaries = trajectories?.trajectorySummaries || {};
+const lastViewed = Object.entries(summaries).sort(([, a], [, b]) =>
+  String(b.annotations?.lastUserViewTime || '').localeCompare(String(a.annotations?.lastUserViewTime || ''))
+)[0]?.[0];
+const cascadeId = process.argv[2] || lastViewed;
 if (!cascadeId) throw new Error('No conversation found; pass a cascadeId');
-const summary = trajectories?.trajectorySummaries?.[cascadeId] || {};
+const summary = summaries[cascadeId] || {};
 
 const report = {
   lsAddress,
