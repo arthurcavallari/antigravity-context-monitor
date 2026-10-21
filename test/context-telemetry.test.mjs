@@ -9,7 +9,12 @@ import {
   resolveModelMetadata,
   selectActiveTrajectory,
 } from '../lib/session-resolver.mjs';
-import { computeContextTelemetry, fetchFullTelemetry } from '../lib/context-telemetry.mjs';
+import {
+  CONVERSATION_DETAIL_IDLE_MS,
+  clearConversationDetails,
+  computeContextTelemetry,
+  fetchFullTelemetry,
+} from '../lib/context-telemetry.mjs';
 import { clearRpcCache } from '../lib/rpc-cache.mjs';
 import { setAiCreditsOverageSetting } from '../lib/plan-quota.mjs';
 import {
@@ -296,7 +301,7 @@ test('fetchFullTelemetry orchestrates all RPCs and resolves theme and planUsage 
 
 
 // Fake Language Server: counts calls per method and answers from a mutable trajectory state
-function fakeLs(lsAddress) {
+function fakeLs(lsAddress, cascadeIds = ['conv-1']) {
   const calls = {};
   const ls = {
     calls,
@@ -313,7 +318,9 @@ function fakeLs(lsAddress) {
         if (ls.fail.has(method)) return { ok: false, status: 503, text: async () => '{}' };
         let body = {};
         if (method === 'GetAllCascadeTrajectories') {
-          body = { trajectorySummaries: { 'conv-1': { summary: 'Conv 1', ...ls.summary } } };
+          body = {
+            trajectorySummaries: Object.fromEntries(cascadeIds.map((id) => [id, { summary: id, ...ls.summary }])),
+          };
         } else if (method === 'GetCascadeTrajectorySteps') {
           body = { steps: Array.from({ length: ls.summary.stepCount }, () => ({ type: 'CORTEX_STEP_TYPE_USER_INPUT' })) };
         } else if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
@@ -394,6 +401,33 @@ test('steps and generator metadata are only re-fetched when the trajectory chang
   const retried = await fetchFullTelemetry(ls.options);
   assert.equal(ls.calls.GetCascadeTrajectorySteps, 6);
   assert.equal(retried.context.totalUsedTokens, 1200);
+});
+
+test('frames on different conversations each keep their own details, and unpolled ones are dropped', async () => {
+  const ids = ['conv-a', 'conv-b', 'conv-c'];
+  const ls = fakeLs('127.0.0.1:59992', ids);
+  const poll = (id, nowMs) => fetchFullTelemetry({ ...ls.options, hostCascadeId: id, nowMs });
+
+  // Aux pane + two Hangar decks, each on its own conversation, polling round-robin
+  let t = 1_000_000;
+  for (let round = 0; round < 3; round++) {
+    for (const id of ids) {
+      const res = await poll(id, (t += 1000));
+      assert.equal(res.session.cascadeId, id);
+    }
+  }
+  assert.equal(ls.calls.GetCascadeTrajectorySteps, ids.length);
+
+  // conv-c stops being shown; once it has gone unpolled for longer than the idle window it is dropped
+  t += CONVERSATION_DETAIL_IDLE_MS / 2;
+  await poll('conv-a', t);
+  await poll('conv-b', t);
+  t += CONVERSATION_DETAIL_IDLE_MS / 2 + 1;
+  await poll('conv-a', t);
+  assert.equal(ls.calls.GetCascadeTrajectorySteps, ids.length);
+  await poll('conv-c', t);
+  assert.equal(ls.calls.GetCascadeTrajectorySteps, ids.length + 1);
+  clearConversationDetails();
 });
 
 test('toggling AI credits invalidates the cached quota and user status', async () => {
