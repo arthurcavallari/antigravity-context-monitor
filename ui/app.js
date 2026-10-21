@@ -322,6 +322,7 @@ appRoot?.addEventListener('toggle', (e) => {
 
 window.sidecar?.onWorkspaceChange?.((uris) => { state.workspaceUris = Array.isArray(uris) ? uris : []; refreshTelemetry(false); });
 window.addEventListener('message', (e) => {
+  if (e.source !== window.parent) return;
   if (e.data?.type === 'theme-change' && e.data?.payload) applyTheme(e.data.payload);
   if (e.data?.type === 'conversation-change' && typeof e.data?.payload?.conversationId === 'string') {
     state.hostCascadeId = e.data.payload.conversationId;

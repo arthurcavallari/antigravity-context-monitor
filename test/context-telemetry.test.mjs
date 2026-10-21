@@ -2,7 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveModelMetadata, selectActiveTrajectory } from '../lib/session-resolver.mjs';
+import {
+  formatCeilingCount,
+  formatTokenCount,
+  resolveModelMetadata,
+  selectActiveTrajectory,
+} from '../lib/session-resolver.mjs';
 import { computeContextTelemetry, fetchFullTelemetry } from '../lib/context-telemetry.mjs';
 import { clearRpcCache } from '../lib/rpc-cache.mjs';
 import {
@@ -319,4 +324,12 @@ test('fetchFullTelemetry serves slow-changing RPCs from a short TTL cache withou
   await fetchFullTelemetry(options);
   assert.equal(calls.GetCustomizationStates, 2);
   assert.equal(calls.GetUserStatus, 3);
+});
+
+test('formatTokenCount and formatCeilingCount roll over to M instead of 1000.0k', () => {
+  assert.equal(formatTokenCount(999_949), '999.9k');
+  assert.equal(formatTokenCount(999_999), '1.0M');
+  assert.equal(formatCeilingCount(999_999), '1.0M');
+  assert.equal(formatCeilingCount(200_000), '200k');
+  assert.equal(formatCeilingCount(1_048_576), '1.0M');
 });
