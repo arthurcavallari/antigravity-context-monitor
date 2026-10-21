@@ -124,3 +124,34 @@ test('extractTurnPerformanceAndBudgets computes TTFT, TPS, cache hit %, compacti
   assert.equal(insights.budgets.rules.limit, 20000);
   assert.equal(insights.budgets.maxChatInputTokens, 16384);
 });
+
+test('extractTurnPerformanceAndBudgets estimates Claude thinking and derives response tokens', () => {
+  const steps = [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'go' } },
+    {
+      type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+      // 448 + '[]' = 450 visible chars ≈ 247 tokens
+      plannerResponse: { response: 'x'.repeat(448), thinking: 'plan', thinkingSignature: 'c2ln' },
+    },
+  ];
+  const generatorMetadataList = [
+    {
+      stepIndices: [1],
+      chatModel: {
+        usage: {
+          inputTokens: '1000',
+          outputTokens: '600',
+          responseOutputTokens: '600',
+          apiProvider: 'API_PROVIDER_ANTHROPIC_VERTEX',
+        },
+      },
+    },
+  ];
+  const { performance } = extractTurnPerformanceAndBudgets(generatorMetadataList, {}, steps);
+  assert.equal(performance.thinkingTokens, 353);
+  assert.equal(performance.responseTokens, 247);
+  assert.equal(performance.thinkingEstimated, true);
+  assert.equal(performance.sessionThinkingTokens, 353);
+  assert.equal(performance.sessionResponseTokens, 247);
+  assert.equal(performance.sessionThinkingEstimated, true);
+});

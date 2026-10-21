@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeModelAndEffortFit, countInvocationRetries } from '../lib/effort-advisor.mjs';
+import {
+  analyzeModelAndEffortFit,
+  countInvocationRetries,
+  measureInvocationThinking,
+} from '../lib/effort-advisor.mjs';
 
 const MOCK_MODEL_CONFIG = {
   clientModelConfigs: [
@@ -121,39 +125,107 @@ test('analyzeModelAndEffortFit: flags unused_effort and recommends lighter model
   assert.equal(res.latestTurnFit.promptPreview, 'yes');
 });
 
-test('analyzeModelAndEffortFit: skips unused_effort when no invocation reported thinkingOutputTokens', () => {
-  const modelConfig = {
-    clientModelConfigs: [
-      {
-        label: 'Claude Opus 5.5 (High)',
-        modelId: 'claude-opus-5-5-high',
-        modelOrAlias: { model: 'MODEL_PLACEHOLDER_M402' },
-      },
-    ],
-  };
+const CLAUDE_HIGH_CONFIG = {
+  clientModelConfigs: [
+    {
+      label: 'Claude Opus 5.5 (High)',
+      modelId: 'claude-opus-5-5-high',
+      modelOrAlias: { model: 'MODEL_PLACEHOLDER_M402' },
+    },
+  ],
+};
+
+// 448 response chars + '[]' toolCalls JSON = 450 visible chars ≈ 247 output tokens at 1.82 chars/token
+const VISIBLE_RESPONSE = 'x'.repeat(448);
+
+function singleInvocationTurn({ usage, plannerResponse, model = 'MODEL_PLACEHOLDER_M402', stepIndices = [1] }) {
   const steps = [
     { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'explain the cache' } },
-    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse },
   ];
-  const genMetaFor = (usage) => [
-    { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M402', timeToFirstToken: '3.2s', usage } },
+  const genMeta = [{ stepIndices, chatModel: { model, timeToFirstToken: '3.2s', usage } }];
+  return { steps, genMeta };
+}
+
+test('measureInvocationThinking: exact, known zero, estimated, unknown, and clamped', () => {
+  const steps = [
+    {},
+    { plannerResponse: { response: VISIBLE_RESPONSE, thinking: 'hmm', thinkingSignature: 'sig' } },
+    { plannerResponse: { response: VISIBLE_RESPONSE } },
   ];
 
-  // Anthropic Vertex usage omits thinkingOutputTokens entirely: unknown, not zero
-  const unreported = analyzeModelAndEffortFit(
-    genMetaFor({ inputTokens: '20000', outputTokens: '120', apiProvider: 'API_PROVIDER_ANTHROPIC_VERTEX' }),
-    steps,
-    modelConfig
+  assert.deepEqual(
+    measureInvocationThinking({ stepIndices: [1], chatModel: { usage: { outputTokens: '300', thinkingOutputTokens: '45' } } }, steps),
+    { tokens: 45, estimated: false, known: true }
   );
-  assert.equal(unreported.latestTurnFit.effort, 'High');
-  assert.equal(unreported.latestTurnFit.status, 'optimal');
+  const claude = (outputTokens, stepIndices) => ({
+    stepIndices,
+    chatModel: { usage: { outputTokens, apiProvider: 'API_PROVIDER_ANTHROPIC_VERTEX' } },
+  });
+  assert.deepEqual(measureInvocationThinking(claude('247', [2]), steps), { tokens: 0, estimated: false, known: true });
+  assert.deepEqual(measureInvocationThinking(claude('300', [1]), steps), { tokens: 53, estimated: true, known: true });
+  assert.deepEqual(measureInvocationThinking(claude('300'), steps), { tokens: 0, estimated: false, known: false });
+  assert.equal(measureInvocationThinking(claude('100', [1]), steps).tokens, 0);
 
-  const reported = analyzeModelAndEffortFit(
-    genMetaFor({ inputTokens: '20000', outputTokens: '120', thinkingOutputTokens: '45' }),
-    steps,
-    modelConfig
+  // Other providers: an absent field is an omitted zero, even with a thinking block
+  assert.deepEqual(
+    measureInvocationThinking(
+      { stepIndices: [1], chatModel: { usage: { outputTokens: '300', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } } },
+      steps
+    ),
+    { tokens: 0, estimated: false, known: true }
   );
-  assert.equal(reported.latestTurnFit.status, 'unused_effort');
+});
+
+test('analyzeModelAndEffortFit: estimates Claude thinking from output minus visible text', () => {
+  const claudeUsage = (outputTokens) => ({
+    inputTokens: '20000',
+    outputTokens,
+    responseOutputTokens: outputTokens,
+    apiProvider: 'API_PROVIDER_ANTHROPIC_VERTEX',
+  });
+  const thinkingResponse = { response: VISIBLE_RESPONSE, thinking: 'Let me check.', thinkingSignature: 'c2ln' };
+
+  const light = singleInvocationTurn({ usage: claudeUsage('300'), plannerResponse: thinkingResponse });
+  const lightFit = analyzeModelAndEffortFit(light.genMeta, light.steps, CLAUDE_HIGH_CONFIG).latestTurnFit;
+  assert.equal(lightFit.effort, 'High');
+  assert.equal(lightFit.status, 'unused_effort');
+  assert.equal(lightFit.thinkEstimated, true);
+  assert.match(lightFit.reason, /^Only needed ~53 thinking tokens/);
+
+  const heavy = singleInvocationTurn({ usage: claudeUsage('900'), plannerResponse: thinkingResponse });
+  const heavyFit = analyzeModelAndEffortFit(heavy.genMeta, heavy.steps, CLAUDE_HIGH_CONFIG).latestTurnFit;
+  assert.equal(heavyFit.status, 'optimal');
+  assert.equal(heavyFit.phaseSplit.totalThink, 653);
+
+  // No thinking block at all: zero thinking is known, not estimated
+  const none = singleInvocationTurn({ usage: claudeUsage('247'), plannerResponse: { response: VISIBLE_RESPONSE } });
+  const noneFit = analyzeModelAndEffortFit(none.genMeta, none.steps, CLAUDE_HIGH_CONFIG).latestTurnFit;
+  assert.equal(noneFit.status, 'unused_effort');
+  assert.equal(noneFit.thinkEstimated, false);
+});
+
+test('analyzeModelAndEffortFit: treats an omitted thinkingOutputTokens without a thinking block as zero', () => {
+  // The LS omits zero-valued fields, so a Gemini turn that did not think has no thinkingOutputTokens
+  const turn = singleInvocationTurn({
+    model: 'MODEL_PLACEHOLDER_M73',
+    usage: { inputTokens: '20000', outputTokens: '120', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
+    plannerResponse: { response: 'done' },
+  });
+  const fit = analyzeModelAndEffortFit(turn.genMeta, turn.steps, MOCK_MODEL_CONFIG).latestTurnFit;
+  assert.equal(fit.effort, 'High');
+  assert.equal(fit.status, 'unused_effort');
+});
+
+test('analyzeModelAndEffortFit: skips unused_effort when thinking cannot be measured', () => {
+  const turn = singleInvocationTurn({
+    usage: { inputTokens: '20000', outputTokens: '120', apiProvider: 'API_PROVIDER_ANTHROPIC_VERTEX' },
+    plannerResponse: { response: 'done' },
+    stepIndices: null,
+  });
+  const fit = analyzeModelAndEffortFit(turn.genMeta, turn.steps, CLAUDE_HIGH_CONFIG).latestTurnFit;
+  assert.equal(fit.effort, 'High');
+  assert.equal(fit.status, 'optimal');
 });
 
 test('analyzeModelAndEffortFit: flags loop_tax and steps down effort within family', () => {

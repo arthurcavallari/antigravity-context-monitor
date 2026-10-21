@@ -130,9 +130,11 @@
   const outTotal = (perf.responseTokens || 0) + (perf.thinkingTokens || 0);
   const thinkPct = outTotal > 0 ? Math.round(((perf.thinkingTokens || 0) / outTotal) * 100) : 0;
   const respPct = Math.max(0, 100 - thinkPct);
+  const turnApprox = perf.thinkingEstimated ? '~' : '';
+  const sessionApprox = perf.sessionThinkingEstimated ? '~' : '';
   const outThinkTooltip = [
-    `Turn: ${esc(perf.formattedResponse || '0')} resp · ${esc(perf.formattedThinking || '0')} think (${esc(perf.thinkingRatioPct || 0)}% reasoning)`,
-    `Session: ${esc(perf.formattedSessionResponse || '0')} resp · ${esc(perf.formattedSessionThinking || '0')} think (${esc(perf.sessionThinkingRatioPct || 0)}% reasoning)`,
+    `Turn: ${esc(perf.formattedResponse || '0')} resp · ${turnApprox}${esc(perf.formattedThinking || '0')} think (${esc(perf.thinkingRatioPct || 0)}% reasoning)${turnApprox ? ' (est.)' : ''}`,
+    `Session: ${esc(perf.formattedSessionResponse || '0')} resp · ${sessionApprox}${esc(perf.formattedSessionThinking || '0')} think (${esc(perf.sessionThinkingRatioPct || 0)}% reasoning)${sessionApprox ? ' (est.)' : ''}`,
   ].join('\n');
 
   const perfStripHtml = `
@@ -147,7 +149,7 @@
       </div>
       <div class="perf-cell" title="${outThinkTooltip}">
         <span class="perf-label">Out / Think</span>
-        <span class="perf-val">${esc(perf.formattedResponse || '0')} / ${esc(perf.formattedThinking || '0')}</span>
+        <span class="perf-val">${esc(perf.formattedResponse || '0')} / ${turnApprox}${esc(perf.formattedThinking || '0')}</span>
         <div class="thinking-track">
           <div class="thinking-bar-response" style="width:${respPct}%"></div>
           <div class="thinking-bar-thinking" style="width:${thinkPct}%"></div>
