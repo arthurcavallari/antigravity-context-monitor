@@ -322,7 +322,19 @@
 
   // Hangar keeps hidden deck tabs mounted; it tells this frame when it is shown or hidden
   let hostVisible = true;
-  const isPaneVisible = () => hostVisible && !document.hidden;
+  // A host can also hide this frame with CSS without saying so (Antigravity keeping an old conversation
+  // view mounted). document.hidden stays false then, but IntersectionObserver sees the frame leave the
+  // viewport for display:none, content-visibility:hidden and offscreen hiding, through nested frames too
+  let inViewport = true;
+  if (typeof IntersectionObserver === 'function') {
+    new IntersectionObserver((entries) => {
+      const next = entries[entries.length - 1].isIntersecting;
+      if (next === inViewport) return;
+      inViewport = next;
+      syncPolling();
+    }).observe(document.documentElement);
+  }
+  const isPaneVisible = () => hostVisible && inViewport && !document.hidden;
 
   window.sidecar?.onWorkspaceChange?.((uris) => { state.workspaceUris = Array.isArray(uris) ? uris : []; refreshTelemetry(false); });
   window.addEventListener('message', (e) => {

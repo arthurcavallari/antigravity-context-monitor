@@ -54,6 +54,16 @@ function bootApp() {
   const winListeners = {};
   const parent = {};
   const host = { executing: false, telemetryCalls: 0 };
+  const observers = [];
+  class IntersectionObserver {
+    constructor(cb) {
+      this.cb = cb;
+      observers.push(this);
+    }
+    observe(target) {
+      this.target = target;
+    }
+  }
   const document = {
     hidden: false,
     getElementById: () => null,
@@ -69,6 +79,7 @@ function bootApp() {
     window,
     document,
     URLSearchParams,
+    IntersectionObserver,
     setTimeout: timers.setTimeout,
     clearTimeout: timers.clearTimeout,
   });
@@ -86,6 +97,9 @@ function bootApp() {
     document,
     post: (data) => winListeners.message({ source: parent, data }),
     fireVisibilityChange: () => docListeners.visibilitychange(),
+    setInViewport: (isIntersecting) => {
+      for (const o of observers) if (o.target === document.documentElement) o.cb([{ isIntersecting }]);
+    },
   };
 }
 
@@ -146,4 +160,23 @@ test('app.js polls adaptively and pauses while Hangar hides the frame', async ()
   await app.timers.advance(60_000);
   assert.equal(app.host.telemetryCalls, 6);
   assert.equal(app.timers.pending(), 0);
+});
+
+test('app.js pauses when a host hides the frame with CSS without telling it', async () => {
+  const app = bootApp();
+  const { POLL_IDLE_MS } = app.ui;
+  await app.timers.advance(0);
+  assert.equal(app.host.telemetryCalls, 1);
+
+  // e.g. Antigravity sets display:none on a cached conversation view: no message, document.hidden false
+  app.setInViewport(false);
+  await app.timers.advance(10 * POLL_IDLE_MS);
+  assert.equal(app.host.telemetryCalls, 1);
+  assert.equal(app.timers.pending(), 0);
+
+  app.setInViewport(true);
+  await app.timers.advance(0);
+  assert.equal(app.host.telemetryCalls, 2);
+  await app.timers.advance(POLL_IDLE_MS);
+  assert.equal(app.host.telemetryCalls, 3);
 });
