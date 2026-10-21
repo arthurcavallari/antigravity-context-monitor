@@ -23,14 +23,6 @@ runSidecarSetup({
     'ui/components/mcp-budgets-tab.js',
     'ui/components/diagnostics-tab.js',
   ],
-  testFiles: [
-    'test/context-telemetry.test.mjs',
-    'test/plan-quota.test.mjs',
-    'test/turn-insights.test.mjs',
-    'test/effort-advisor.test.mjs',
-    'test/mcp-diagnostics.test.mjs',
-    'test/ui-render.test.mjs',
-  ],
 }).catch((err) => {
   console.error(`[${SIDECAR_ID}] Setup failed: ${err.message}`);
   process.exit(1);

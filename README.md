@@ -55,10 +55,9 @@ npm run setup
 
 What `setup` does:
 1. Validates all required sidecar manifest, backend, and UI assets.
-2. Runs the unit test suite (`npm test`).
-3. Links `~/.gemini/config/sidecars/context-monitor` to your package checkout (using an NTFS directory junction on Windows or directory symlink on macOS/Linux, copying out of ephemeral `_npx` caches automatically).
-4. Enables `sidecars["context-monitor"]` in `~/.gemini/config/config.json` (preserving any existing `projectId` and writing UTF-8 without BOM).
-5. Hot-reloads the sidecar via the Language Server `ManageSidecar` RPC when invoked inside an active Antigravity session.
+2. Links `~/.gemini/config/sidecars/context-monitor` to your package checkout (using an NTFS directory junction on Windows or directory symlink on macOS/Linux, copying out of ephemeral `_npx` caches automatically).
+3. Enables `sidecars["context-monitor"]` in `~/.gemini/config/config.json` (preserving any existing `projectId` and writing UTF-8 without BOM).
+4. Hot-reloads the sidecar via the Language Server `ManageSidecar` RPC when invoked inside an active Antigravity session.
 
 ### Uninstallation
 
@@ -97,6 +96,8 @@ antigravity-context-monitor/
 │   ├── plan-quota.mjs            # 5h/weekly plan usage & Google One AI Credits controller
 │   ├── mcp-manager.mjs           # MCP server toggle/refresh & customization catalog
 │   └── diagnostics.mjs           # 80-line ring-buffer log tailer, terminals & sidecars
+├── scripts/
+│   └── validate-manifest.mjs     # hub-manifest.json & sidecar.json checks (run by npm test)
 ├── ui/
 │   ├── index.html                # Auxiliary Pane shell markup
 │   ├── styles.css                # Core theme-adaptive layout & surface styles
@@ -113,7 +114,9 @@ antigravity-context-monitor/
     ├── plan-quota.test.mjs
     ├── turn-insights.test.mjs
     ├── effort-advisor.test.mjs
-    └── mcp-diagnostics.test.mjs
+    ├── mcp-diagnostics.test.mjs
+    ├── ui-render.test.mjs
+    └── manifest-schema.test.mjs
 ```
 
 ---

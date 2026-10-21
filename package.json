@@ -18,8 +18,7 @@
     "server.mjs",
     "setup.mjs",
     "lib",
-    "ui",
-    "test"
+    "ui"
   ],
   "keywords": [
     "antigravity",
@@ -57,6 +56,8 @@
     "start": "node server.mjs",
     "setup": "node setup.mjs",
     "uninstall": "node setup.mjs --uninstall",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "prepublishOnly": "npm test",
+    "validate:manifest": "node scripts/validate-manifest.mjs"
   }
 }

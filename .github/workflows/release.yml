@@ -1,0 +1,33 @@
+name: release
+
+# Push a tag like v1.0.3 (matching package.json) to publish that version to npm.
+# Uses npm trusted publishing (OIDC): no npm token is stored, and the package gets a provenance
+# attestation linking it to this repo and workflow run.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Tag must match package.json version
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${VERSION}" >&2
+            exit 1
+          fi
+      - run: npm install --no-audit --no-fund
+      # Also checks hub-manifest.json, including that its version matches this release
+      - run: npm test
+      - run: npm publish --provenance --access public
