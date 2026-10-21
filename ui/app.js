@@ -86,18 +86,17 @@
   function showActionMessage(text, isError = true) {
     const slot = document.getElementById('action-msg-slot');
     if (!slot) return;
-    slot.innerHTML = `<div class="${isError ? 'error-banner' : 'loading-state'} action-msg">${esc(text)}</div>`;
     clearTimeout(actionMsgTimer);
+    if (!text) { slot.innerHTML = ''; return; }
+    slot.innerHTML = `<div class="${isError ? 'error-banner' : 'loading-state'} action-msg">${esc(text)}</div>`;
     actionMsgTimer = setTimeout(() => { slot.innerHTML = ''; }, ACTION_MSG_MS);
   }
 
-  // Sandboxed iframes without allow-modals make confirm() return false instantly; fall back to click-again
+  // Click-again confirmation: native confirm() is unthemed, blocks the pane, and may be sandboxed away
   function confirmAction(key, message) {
-    const startedAt = performance.now();
-    if (window.confirm(message)) return true;
-    if (performance.now() - startedAt > 50) return false;
     if (pendingConfirm.key === key && Date.now() < pendingConfirm.until) {
       pendingConfirm = { key: '', until: 0 };
+      showActionMessage('', false);
       return true;
     }
     pendingConfirm = { key, until: Date.now() + ACTION_MSG_MS };
