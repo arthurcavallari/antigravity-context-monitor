@@ -7,6 +7,7 @@ import { realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAssetHandler, createAgyCssHandler } from 'antigravity-sidecar-kit/server';
+import { exitWithLanguageServer } from 'antigravity-sidecar-kit/lifecycle';
 import { fetchFullTelemetry } from './lib/context-telemetry.mjs';
 import { setAiCreditsOverageSetting } from './lib/plan-quota.mjs';
 import { toggleMcpServerState, refreshMcpServerState } from './lib/mcp-manager.mjs';
@@ -52,3 +53,5 @@ app.api('/api/terminals/close', async (data) => closeTerminalById(String(data?.t
 app.api('/api/sidecars/restart', async (data) => restartSidecarById(String(data?.sidecarId || '')), 'POST');
 
 await app.run();
+// Antigravity on Windows doesn't stop sidecars when it quits; exit once its language server is gone.
+exitWithLanguageServer({ app });
