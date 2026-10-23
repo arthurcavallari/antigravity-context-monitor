@@ -1,6 +1,6 @@
 {
   "name": "antigravity-context-monitor",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "module",
   "description": "Real-time context window breakdown, prompt & thinking effort advisor, MCP server controller, and 5h/weekly quota telemetry sidecar for Google Antigravity.",
   "license": "MIT",
