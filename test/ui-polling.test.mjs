@@ -237,3 +237,34 @@ test('the context tab shows an empty state on a new-conversation pane', () => {
   const html = window.ContextMonitor.renderContextTab({ newConversation: true, session: null, context: {} });
   assert.match(html, /No conversation yet/);
 });
+
+test('app.js asks for no conversation when Antigravity frames it without an id, and guesses only in a plain tab', () => {
+  const firstHostId = (search, framed) => {
+    const bodies = [];
+    const window = { location: { search }, addEventListener() {} };
+    window.parent = framed ? {} : window;
+    const ctx = vm.createContext({
+      window,
+      document: {
+        hidden: false,
+        getElementById: () => null,
+        addEventListener() {},
+        documentElement: { style: { setProperty() {}, removeProperty() {} }, dataset: {} },
+      },
+      URLSearchParams,
+      setTimeout: () => 0,
+      clearTimeout() {},
+    });
+    for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    window.ContextMonitor.apiCall = (path, body) => {
+      if (path === '/api/telemetry') bodies.push(body);
+      return new Promise(() => {});
+    };
+    vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+    return bodies[0]?.hostCascadeId;
+  };
+  // Antigravity's new-conversation screen opens sidecar frames with no conversationId
+  assert.equal(firstHostId('', true), '_new');
+  assert.equal(firstHostId('?conversationId=conv-1', true), 'conv-1');
+  assert.equal(firstHostId('', false), '');
+});
