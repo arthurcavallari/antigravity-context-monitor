@@ -180,3 +180,60 @@ test('app.js pauses when a host hides the frame with CSS without telling it', as
   await app.timers.advance(POLL_IDLE_MS);
   assert.equal(app.host.telemetryCalls, 3);
 });
+
+test('app.js sends the frame conversation raw, and a real change supersedes the poll in flight', async () => {
+  const timers = fakeTimers();
+  const winListeners = {};
+  const parent = {};
+  const calls = [];
+  let onWorkspaceChange = null;
+  const document = {
+    hidden: false,
+    getElementById: () => null,
+    addEventListener() {},
+    documentElement: { style: { setProperty() {}, removeProperty() {} }, dataset: {} },
+  };
+  const window = {
+    parent,
+    location: { search: '?conversationId=_new' },
+    sidecar: { onWorkspaceChange: (cb) => (onWorkspaceChange = cb) },
+    addEventListener: (type, fn) => (winListeners[type] = fn),
+  };
+  const ctx = vm.createContext({
+    window,
+    document,
+    URLSearchParams,
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+  });
+  for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+  window.ContextMonitor.apiCall = (path, body) => new Promise((resolve) => calls.push({ path, body, resolve }));
+  vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+
+  // _new reaches the server as is, so it can show the new-conversation empty state
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.hostCascadeId, '_new');
+
+  // Hangar 1.2.x posts conversation-change; a real change starts a new poll without waiting
+  const post = (conversationId) =>
+    winListeners.message({ source: parent, data: { type: 'conversation-change', payload: { conversationId } } });
+  post('conv-live');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].body.hostCascadeId, 'conv-live');
+  post('conv-live');
+  assert.equal(calls.length, 2);
+
+  onWorkspaceChange(['file:///c:/repo']);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls[2].body.workspaceUris, ['file:///c:/repo']);
+  onWorkspaceChange(['file:///c:/repo']);
+  assert.equal(calls.length, 3);
+});
+
+test('the context tab shows an empty state on a new-conversation pane', () => {
+  const window = {};
+  const ctx = vm.createContext({ window, document: { documentElement: { style: {}, dataset: {} } } });
+  for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+  const html = window.ContextMonitor.renderContextTab({ newConversation: true, session: null, context: {} });
+  assert.match(html, /No conversation yet/);
+});

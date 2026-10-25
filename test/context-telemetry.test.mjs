@@ -152,6 +152,46 @@ test('selectActiveTrajectory resolves workspaceUris and breaks lastUserViewTime 
   assert.equal(pinResult.activeSession.cascadeId, 'conv-a');
 });
 
+test("selectActiveTrajectory follows the frame's own conversation, and shows nothing on a new-conversation pane", () => {
+  // Switching from conv-prev to conv-open stamps both with the same lastUserViewTime, and conv-prev has
+  // the newer input and the matching workspace, so any ranking would pick it
+  const switched = {
+    trajectorySummaries: {
+      'conv-prev': {
+        lastUserInputTime: '2026-10-17T10:17:00Z',
+        annotations: { title: 'Prev', lastUserViewTime: '2026-10-17T10:18:00.000Z' },
+        workspaces: [{ workspaceFolderAbsoluteUri: 'file:///c:/repo' }],
+      },
+      'conv-open': {
+        lastUserInputTime: '2026-10-17T09:00:00Z',
+        annotations: { title: 'Open', lastUserViewTime: '2026-10-17T10:18:00.000Z' },
+        workspaces: [{ workspaceFolderAbsoluteUri: 'file:///c:/elsewhere' }],
+      },
+    },
+  };
+  const opts = { workspaceUris: ['file:///c:/repo'] };
+  assert.equal(selectActiveTrajectory(switched, opts).activeSession.cascadeId, 'conv-prev');
+  for (const id of ['conv-open', 'conv-prev', 'conv-open']) {
+    assert.equal(selectActiveTrajectory(switched, { ...opts, hostCascadeId: id }).activeSession.cascadeId, id);
+  }
+
+  // A conversation the trajectory list doesn't include yet is still this frame's conversation
+  const fresh = selectActiveTrajectory(switched, { ...opts, hostCascadeId: 'conv-just-created' });
+  assert.equal(fresh.activeSession.cascadeId, 'conv-just-created');
+  assert.equal(fresh.newConversation, false);
+
+  // _new is Antigravity's new-conversation pane: no session, rather than another conversation's data
+  const blank = selectActiveTrajectory(switched, { ...opts, hostCascadeId: '_new' });
+  assert.equal(blank.activeSession, null);
+  assert.equal(blank.newConversation, true);
+  assert.equal(blank.sessions.length, 2);
+  // ...unless the user pinned a session from the dropdown
+  assert.equal(
+    selectActiveTrajectory(switched, { hostCascadeId: '_new', requestedCascadeId: 'conv-prev' }).activeSession.cascadeId,
+    'conv-prev'
+  );
+});
+
 test('computeContextTelemetry derives exact working memory against 256k ceiling and computes compactionRisk', () => {
   const generatorMetadataList = [
     {
