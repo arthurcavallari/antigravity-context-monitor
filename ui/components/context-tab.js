@@ -71,6 +71,9 @@
   }
 
   function renderContextTab(data, uiState = {}) {
+  if (data.newConversation && !data.session) {
+    return '<div class="empty-hint">No conversation yet. Its context appears here once you send the first message.</div>';
+  }
   const { context = {}, planUsage = {}, turnInsights = {} } = data;
   const categories = Array.isArray(context.categories) ? context.categories : [];
   const mcp = context.mcp || { servers: [], formattedTotalTokens: '0', totalToolCount: 0 };

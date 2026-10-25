@@ -278,8 +278,8 @@
     } catch { /* ignore transient polling error */ }
   }
 
-  async function refreshTelemetry(manual = false) {
-    if (!manual && telemetryInFlight) return;
+  async function refreshTelemetry(manual = false, force = false) {
+    if (!manual && !force && telemetryInFlight) return;
     const reqId = ++telemetrySeq;
     telemetryInFlight = true;
     if (manual) { state.isRefreshing = true; render(); }
@@ -336,13 +336,22 @@
   }
   const isPaneVisible = () => hostVisible && inViewport && !document.hidden;
 
-  window.sidecar?.onWorkspaceChange?.((uris) => { state.workspaceUris = Array.isArray(uris) ? uris : []; refreshTelemetry(false); });
+  // A real change starts a fresh poll even if one is in flight; the stale response is dropped
+  window.sidecar?.onWorkspaceChange?.((uris) => {
+    const next = Array.isArray(uris) ? uris : [];
+    if (JSON.stringify(next) === JSON.stringify(state.workspaceUris)) return;
+    state.workspaceUris = next;
+    refreshTelemetry(false, true);
+  });
   window.addEventListener('message', (e) => {
     if (e.source !== window.parent) return;
     if (e.data?.type === 'theme-change' && e.data?.payload) applyTheme(e.data.payload);
+    // Antigravity never sends this (it gives each conversation its own frame); Hangar 1.2.x does
     if (e.data?.type === 'conversation-change' && typeof e.data?.payload?.conversationId === 'string') {
-      state.hostCascadeId = e.data.payload.conversationId;
-      refreshTelemetry(false);
+      if (e.data.payload.conversationId !== state.hostCascadeId) {
+        state.hostCascadeId = e.data.payload.conversationId;
+        refreshTelemetry(false, true);
+      }
     }
     const visible = readHostVisibility(e.data);
     if (visible !== null && visible !== hostVisible) {
