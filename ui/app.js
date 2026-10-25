@@ -31,9 +31,12 @@
     '#culprits-collapse-toggle': 'culpritsExpanded',
   };
 
+  // Antigravity opens frames without a conversationId on its new-conversation screen, so inside a host
+  // no id means no conversation yet ('_new'). Only a standalone browser tab has to guess.
+  const isFramed = window.parent !== window;
   const state = {
     activeTab: 'context', pinnedCascadeId: '',
-    hostCascadeId: window.sidecar?.conversationId || new URLSearchParams(window.location.search).get('conversationId') || '',
+    hostCascadeId: window.sidecar?.conversationId || new URLSearchParams(window.location.search).get('conversationId') || (isFramed ? '_new' : ''),
     workspaceUris: [], mcpExpanded: false, compactionsExpanded: false, effortFitExpanded: false, culpritsExpanded: false,
     contextHelpOpen: false, modelProfileOpen: false, openCheckpoints: new Set(), logTailingEnabled: false,
     logAutoScroll: true, isProgrammaticScroll: false, logBuffer: [], renderedLogCount: 0, isRefreshing: false,
