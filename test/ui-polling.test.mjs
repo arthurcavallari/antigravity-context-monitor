@@ -268,3 +268,48 @@ test('app.js asks for no conversation when Antigravity frames it without an id, 
   assert.equal(firstHostId('?conversationId=conv-1', true), 'conv-1');
   assert.equal(firstHostId('', false), '');
 });
+
+test('applyTheme preserves live host theme-change postMessage variables across subsequent /api/telemetry polls', () => {
+  const props = new Map();
+  const document = {
+    documentElement: {
+      dataset: {},
+      style: {
+        setProperty: (k, v) => props.set(k, v),
+        removeProperty: (k) => props.delete(k),
+      },
+    },
+  };
+  const window = {};
+  const ctx = vm.createContext({ window, document });
+  vm.runInContext(readFileSync(join(UI_DIR, 'core.js'), 'utf8'), ctx, { filename: 'core.js' });
+  const { applyTheme } = window.ContextMonitor;
+
+  // Initial /api/telemetry poll sets fallback theme vars
+  applyTheme({ mode: 'dark', vars: { '--cm-bg': '#181818', '--cm-text': '#ffffff' } });
+  assert.equal(document.documentElement.dataset.theme, 'dark');
+  assert.equal(props.get('--cm-bg'), '#181818');
+
+  // Host postMessage arrives with live native theme variables
+  applyTheme({
+    themeType: 'light',
+    isDark: false,
+    cssVariables: {
+      '--background': '#f8f9fc',
+      '--foreground': '#121317',
+      '--agy-canvas': '#181818',
+      '--agy-ink-soft': 'color-mix(in srgb, #ffffff 88%, #181818)',
+    },
+  });
+  assert.equal(document.documentElement.dataset.theme, 'light');
+  assert.equal(props.get('--background'), '#f8f9fc');
+  assert.equal(props.has('--cm-bg'), false, 'CM fallback keys removed when --background is present');
+  assert.equal(props.has('--agy-canvas'), false, 'static --agy-canvas not set inline when --background is present');
+  assert.equal(props.has('--agy-ink-soft'), false, 'static --agy-ink-soft not set inline when --background is present');
+
+  // Subsequent /api/telemetry poll must NOT overwrite the live host theme
+  applyTheme({ mode: 'dark', vars: { '--cm-bg': '#181818', '--cm-text': '#ffffff' } });
+  assert.equal(document.documentElement.dataset.theme, 'light');
+  assert.equal(props.has('--cm-bg'), false);
+  assert.equal(props.get('--background'), '#f8f9fc');
+});

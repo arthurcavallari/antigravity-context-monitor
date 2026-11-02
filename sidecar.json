@@ -1,7 +1,7 @@
 {
   "command": "node",
   "args": [
-    "server.mjs"
+    "launch.mjs"
   ],
   "display_name": "Context Monitor",
   "description": "Live context telemetry, working-memory gauge, compaction risk, MCP control plane, and diagnostics sidecar for Google Antigravity.",

@@ -1,5 +1,5 @@
 /**
- * @fileoverview Authenticated fetch wrapper, theme sync, and shared UI formatting utilities.
+ * @fileoverview Authenticated fetch wrapper, AGY 88% contrast theme sync, StateSync helpers, and UI formatting utilities.
  */
 
 (function () {
@@ -14,23 +14,73 @@
   };
 
   let lastThemeSig = '';
+  let hasLiveHostTheme = false;
+  let toastTimer = 0;
+
+  const CM_FALLBACK_KEYS = [
+    '--cm-bg', '--cm-surface', '--cm-card', '--cm-secondary', '--cm-secondary-fg',
+    '--cm-border', '--cm-border-solid', '--cm-text', '--cm-muted', '--cm-accent', '--cm-hover',
+  ];
+
+  function deriveCmVarsFromEditor(bg, fg, isLight) {
+    const surfaceMix = '2.5%';
+    const cardMix = isLight ? '#ffffff' : `color-mix(in srgb, ${fg} 5%, ${bg})`;
+    const secMix = isLight ? '8%' : '12%';
+    const secFgMix = isLight ? '80%' : '85%';
+    const borderMix = isLight ? '7.5%' : '8%';
+    const mutedMix = isLight ? '60%' : '65%';
+    return {
+      '--cm-bg': bg,
+      '--cm-surface': `color-mix(in srgb, ${fg} ${surfaceMix}, ${bg})`,
+      '--cm-card': cardMix,
+      '--cm-secondary': `color-mix(in srgb, ${fg} ${secMix}, ${bg})`,
+      '--cm-secondary-fg': `color-mix(in srgb, ${fg} ${secFgMix}, ${bg})`,
+      '--cm-border': `color-mix(in srgb, ${fg} ${borderMix}, transparent)`,
+      '--cm-border-solid': `color-mix(in srgb, ${fg} ${borderMix}, ${bg})`,
+      '--cm-text': fg,
+      '--cm-muted': `color-mix(in srgb, ${fg} ${mutedMix}, ${bg})`,
+      '--cm-hover': `color-mix(in srgb, ${fg} ${isLight ? '7.5%' : '6%'}, transparent)`,
+    };
+  }
 
   function applyTheme(theme) {
-    if (!theme) return;
+    if (!theme || typeof theme !== 'object') return;
     const root = document.documentElement;
-    const cv = theme.cssVariables;
-    if (cv && typeof cv === 'object' && !theme.vars) {
-      if (cv['--background'] || cv['--foreground']) {
-        root.dataset.theme = theme.themeType === 'light' || theme.isDark === false ? 'light' : 'dark';
+    const cv = theme.cssVariables && typeof theme.cssVariables === 'object' ? theme.cssVariables : (!theme.vars ? theme : null);
+    if (cv && !theme.vars) {
+      hasLiveHostTheme = true;
+      lastThemeSig = JSON.stringify(theme);
+      const isLight = theme.themeType === 'light' || theme.isDark === false;
+      const bg = cv['--background'] || cv['--vscode-editor-background'] || (isLight ? '#f8f9fc' : '#101010');
+      const fg = cv['--foreground'] || cv['--vscode-editor-foreground'] || (isLight ? '#121317' : '#cccccc');
+      const inkSoft = cv['--agy-ink-soft'] || `color-mix(in srgb, ${fg} 88%, ${bg})`;
+      if (window.AgyShell?.applyAgyThemeFromPayload) {
+        window.AgyShell.applyAgyThemeFromPayload({
+          ...theme,
+          cssVariables: { ...cv, '--background': bg, '--foreground': fg, '--agy-ink-soft': inkSoft },
+        });
+      }
+      const hasNativeVars = Boolean(cv['--background'] || cv['--foreground']);
+      const hasEditorVars = Boolean(cv['--vscode-editor-background'] || cv['--vscode-editor-foreground']);
+      if (hasNativeVars || hasEditorVars) {
+        root.dataset.theme = isLight ? 'light' : 'dark';
         for (const [k, v] of Object.entries(cv)) {
-          if (typeof v === 'string') root.style.setProperty(k, v);
+          if (typeof v !== 'string') continue;
+          if (hasNativeVars && k.startsWith('--agy-')) continue;
+          root.style.setProperty(k, v);
         }
-        const fallbackKeys = [
-          '--cm-bg', '--cm-surface', '--cm-card', '--cm-secondary', '--cm-border',
-          '--cm-border-solid', '--cm-text', '--cm-muted', '--cm-accent', '--cm-hover',
-        ];
-        for (const k of fallbackKeys) root.style.removeProperty(k);
-        lastThemeSig = '';
+        if (hasNativeVars) {
+          for (const k of CM_FALLBACK_KEYS) root.style.removeProperty(k);
+          root.style.removeProperty('--agy-ink-soft');
+        } else {
+          const derived = deriveCmVarsFromEditor(
+            cv['--vscode-editor-background'] || (isLight ? '#f8f9fc' : '#101010'),
+            cv['--vscode-editor-foreground'] || (isLight ? '#121317' : '#cccccc'),
+            isLight
+          );
+          for (const [k, v] of Object.entries(derived)) root.style.setProperty(k, v);
+          root.style.setProperty('--agy-ink-soft', inkSoft);
+        }
       }
       if (cv['--font-family'] || cv['--vscode-font-family']) {
         root.style.setProperty('--vscode-font-family', cv['--vscode-font-family'] || cv['--font-family']);
@@ -38,20 +88,84 @@
       if (cv['--editor-font-family']) {
         root.style.setProperty('--editor-font-family', cv['--editor-font-family']);
       }
+      return;
     }
-    if (!theme.vars) return;
+    if (!theme.vars || hasLiveHostTheme) return;
     const sig = JSON.stringify(theme);
     if (sig === lastThemeSig) return;
     lastThemeSig = sig;
+    const isLight = (theme.mode || 'dark') === 'light';
+    const bg = theme.vars['--background'] || theme.vars['--cm-bg'] || (isLight ? '#f8f9fc' : '#101010');
+    const fg = theme.vars['--foreground'] || theme.vars['--cm-text'] || (isLight ? '#121317' : '#cccccc');
+    const inkSoft = `color-mix(in srgb, ${fg} 88%, ${bg})`;
     root.dataset.theme = theme.mode || 'dark';
     for (const [k, v] of Object.entries(theme.vars)) root.style.setProperty(k, v);
+    if (!theme.vars['--cm-secondary-fg']) {
+      root.style.setProperty('--cm-secondary-fg', `color-mix(in srgb, ${fg} ${isLight ? '80%' : '85%'}, ${bg})`);
+    }
+    root.style.setProperty('--agy-ink-soft', inkSoft);
     if (document.body) document.body.style.fontFamily = 'var(--vscode-font-family)';
   }
 
+  if (window.AgyUI?.registerIcons) {
+    window.AgyUI.registerIcons(ICONS);
+  }
+
   function icon(name, size = 14) {
+    if (window.AgyUI?.iconSvg) {
+      return window.AgyUI.iconSvg(name, size);
+    }
     const d = ICONS[name];
     if (!d) return '';
     return `<svg width="${size}" height="${size}" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="${d}"/></svg>`;
+  }
+
+  function iconSvg(name, size = 14, className = '') {
+    if (window.AgyUI?.iconSvg) {
+      return window.AgyUI.iconSvg(name, size, className);
+    }
+    const cls = ['agy-icon', className].filter(Boolean).join(' ');
+    const d = ICONS[name] || ICONS.refresh;
+    return `<svg width="${size}" height="${size}" viewBox="0 -960 960 960" fill="currentColor" class="${cls}" aria-hidden="true"><path d="${d}"/></svg>`;
+  }
+
+  function iconEl(name, size = 14, className = '') {
+    if (window.AgyUI?.iconEl) {
+      return window.AgyUI.iconEl(name, size, className);
+    }
+    const wrap = document.createElement('span');
+    wrap.className = 'agy-icon-wrap';
+    wrap.innerHTML = iconSvg(name, size, className);
+    return wrap.firstElementChild;
+  }
+
+  function el(tag, attrs = {}, children = []) {
+    if (window.AgyUI?.el) {
+      return window.AgyUI.el(tag, attrs, children);
+    }
+    const elem = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === 'className' || k === 'class') elem.className = v;
+      else if (k === 'dataset' && typeof v === 'object') Object.assign(elem.dataset, v);
+      else if (k === 'style' && typeof v === 'object') Object.assign(elem.style, v);
+      else if (k.startsWith('on') && typeof v === 'function') elem.addEventListener(k.slice(2).toLowerCase(), v);
+      else if (k === 'innerHTML') elem.innerHTML = v;
+      else if (k === 'textContent') elem.textContent = v;
+      else elem.setAttribute?.(k, v);
+    }
+    for (const ch of (Array.isArray(children) ? children : [children]).filter(Boolean)) {
+      if (typeof ch === 'string') elem.appendChild(document.createTextNode(ch));
+      else elem.appendChild(ch);
+    }
+    return elem;
+  }
+
+  function clear(elem) {
+    if (window.AgyUI?.clear) {
+      return window.AgyUI.clear(elem);
+    }
+    if (elem) elem.innerHTML = '';
+    return elem;
   }
 
   function esc(value) {
@@ -76,10 +190,46 @@
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || `HTTP ${res.status}`);
+    if (!res.ok || data?.ok === false) {
+      throw new Error(data?.error || `HTTP ${res.status}`);
     }
     return data;
+  }
+
+  async function mutateState(action, payload = {}) {
+    const body = action && typeof action === 'object' ? action : { action: String(action || ''), payload };
+    return apiCall('/api/mutate', body);
+  }
+
+  async function notifyAgent({ message, severity = 'info', triggerTurn = true, cascadeId = '', conversationId = '', title = '' } = {}) {
+    const urlConv = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search || '').get('conversationId') : '';
+    const rawConv = cascadeId || conversationId || window.ContextMonitor?.activeConversationId || window.sidecar?.conversationId || urlConv || '';
+    const convId = rawConv && rawConv !== '_new' ? rawConv : undefined;
+    return apiCall('/api/notify', {
+      message: String(message || ''),
+      severity,
+      triggerTurn: Boolean(triggerTurn),
+      ...(convId ? { conversationId: convId } : {}),
+      ...(title ? { title } : {}),
+    });
+  }
+
+  function showToast(text, isError = false, durationMs = 4000) {
+    if (typeof document === 'undefined') return;
+    let slot = document.getElementById?.('action-msg-slot');
+    if (!slot && document.body?.appendChild && document.createElement) {
+      slot = document.createElement('div');
+      slot.id = 'action-msg-slot';
+      document.body.appendChild(slot);
+    }
+    if (!slot) return;
+    if (typeof clearTimeout === 'function' && toastTimer) clearTimeout(toastTimer);
+    if (!text) { slot.innerHTML = ''; return; }
+    const isErr = isError === true || isError === 'error';
+    slot.innerHTML = `<div class="${isErr ? 'error-banner' : 'loading-state'} action-msg">${esc(text)}</div>`;
+    if (typeof setTimeout === 'function' && durationMs > 0) {
+      toastTimer = setTimeout(() => { slot.innerHTML = ''; }, durationMs);
+    }
   }
 
   // Poll fast while an agent is executing (or logs are tailing), slowly while idle
@@ -108,8 +258,16 @@
     readHostVisibility,
     applyTheme,
     icon,
+    iconSvg,
+    iconEl,
+    el,
+    clear,
     esc,
+    escapeHtml: esc,
     formatBadgeLabel,
     apiCall,
+    mutateState,
+    notifyAgent,
+    showToast,
   });
 })();

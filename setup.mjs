@@ -9,9 +9,14 @@ import { REPO_ROOT, SIDECAR_ID } from './lib/constants.mjs';
 
 runSidecarSetup({
   sidecarId: SIDECAR_ID,
+  displayName: 'Antigravity Context Monitor',
+  port: 52320,
+  sidecarDir: REPO_ROOT,
   repoRoot: REPO_ROOT,
+  entryScript: 'launch.mjs',
   requiredFiles: [
     'sidecar.json',
+    'launch.mjs',
     'server.mjs',
     'ui/index.html',
     'ui/styles.css',

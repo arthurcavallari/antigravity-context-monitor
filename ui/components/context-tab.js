@@ -38,14 +38,14 @@
             <strong>${esc(context.formattedUsed || '0')}</strong> / ${esc(ceilingText)} (${esc(context.formattedUsedPct || '0.0%')})
           </span>
           <button id="context-help-btn" class="help-pill ${state.contextHelpOpen ? 'active' : ''}" title="Why ${esc(ceilingText)} instead of ${esc(nativeText)}?">?</button>
-          <button id="refresh-btn" class="icon-btn ${state.isRefreshing ? 'spinning' : ''}" title="Refresh telemetry">${refreshSvg}</button>
+          <button id="refresh-btn" class="agy-icon-btn ${state.isRefreshing ? 'spinning' : ''}" title="Refresh telemetry">${refreshSvg}</button>
         </div>
       </header>
       ${renderHeaderDrawers(data, state)}
-      <nav class="tab-bar">
-        <button class="tab-btn ${state.activeTab === 'context' ? 'active' : ''}" data-tab="context">Context</button>
-        <button class="tab-btn ${state.activeTab === 'mcp' ? 'active' : ''}" data-tab="mcp">MCP &amp; Budgets</button>
-        <button class="tab-btn ${state.activeTab === 'diagnostics' ? 'active' : ''}" data-tab="diagnostics">Diagnostics</button>
+      <nav id="tab-nav" class="agy-toggle-group agy-toggle-group-grid">
+        <button class="agy-toggle-item ${state.activeTab === 'context' ? 'active' : ''}" data-tab="context">Context</button>
+        <button class="agy-toggle-item ${state.activeTab === 'mcp' ? 'active' : ''}" data-tab="mcp">MCP &amp; Budgets</button>
+        <button class="agy-toggle-item ${state.activeTab === 'diagnostics' ? 'active' : ''}" data-tab="diagnostics">Diagnostics</button>
       </nav>`;
   }
 
@@ -193,7 +193,7 @@
         <div class="quota-group-card">
           <div class="quota-row">
             <span class="quota-label">${esc(grp.displayName)}</span>
-            ${isAct ? '<span class="status-badge active"><span class="badge-dot"></span>Active</span>' : ''}
+            ${isAct ? '<span class="agy-badge active"><span class="agy-badge-dot"></span>Active</span>' : ''}
           </div>
           <div class="quota-item">
             <div class="quota-row">
@@ -246,7 +246,7 @@
         </div>
         <button id="ai-overage-toggle" type="button" role="switch" aria-checked="${overageOn}" class="overage-toggle" title="Toggle Enable AI Credit Overages">
           <span>Overage</span>
-          <span class="switch-track ${overageOn ? 'on' : ''}"><span class="switch-thumb"></span></span>
+          <span class="agy-switch ${overageOn ? 'on' : ''}"><span class="agy-switch-thumb"></span></span>
         </button>
       </div>
     </div>`;
