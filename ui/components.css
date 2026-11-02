@@ -1,4 +1,4 @@
-.tab-bar {
+#tab-nav {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 2px;
@@ -6,32 +6,29 @@
   padding: 2px;
   border-radius: var(--radius-lg, 0.5rem);
   border: 1px solid var(--cm-border);
+  width: 100%;
   margin-bottom: 12px;
+  user-select: none;
 }
-
-.tab-btn {
+#tab-nav .agy-toggle-item {
   height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
+  padding: 0 8px;
+  border-radius: var(--radius-md, 0.375rem);
   color: var(--cm-secondary-fg);
   font-family: var(--vscode-font-family);
   font-size: var(--text-xs, 0.75rem);
+  line-height: 1rem;
   font-weight: var(--font-weight-medium, 500);
-  padding: 0 8px;
-  border-radius: var(--radius-md, 0.375rem);
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background-color var(--dur-agy) var(--ease-agy), color var(--dur-agy) var(--ease-agy);
 }
-.tab-btn:hover { color: var(--cm-text); }
-.tab-btn.active {
+#tab-nav .agy-toggle-item:hover:not(:disabled) {
+  color: var(--cm-text);
+}
+#tab-nav .agy-toggle-item.active {
   background: var(--cm-secondary);
   color: var(--cm-text);
+}
+@media (max-height: 240px) {
+  #tab-nav, .tab-bar { margin-bottom: 6px; }
 }
 
 .collapsible-toggle {
@@ -158,53 +155,74 @@
 .mcp-card-meta { font-family: var(--vscode-font-family); font-size: var(--text-xs, 0.75rem); color: var(--cm-muted); font-variant-numeric: tabular-nums; }
 .mcp-card-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; }
 
-.status-badge, .badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 9999px;
+.agy-badge {
+  background: rgba(142, 142, 142, 0.12);
+  color: var(--cm-muted);
   font-family: var(--vscode-font-family);
-  font-size: 11px;
-  line-height: 16px;
-  font-weight: var(--font-weight-medium, 500);
-  border: none;
-  flex-shrink: 0;
-  white-space: nowrap;
 }
-.badge-dot { width: 6px; height: 6px; border-radius: 9999px; flex-shrink: 0; }
-.status-badge.active, .badge.starting { background: rgba(67, 128, 180, 0.12); color: var(--cm-blue); }
-.status-badge.active .badge-dot, .badge.starting .badge-dot { background: var(--cm-blue-dot); }
-.status-badge.ready, .badge.running { background: rgba(99, 152, 79, 0.12); color: var(--cm-green); }
-.status-badge.ready .badge-dot, .badge.running .badge-dot { background: var(--cm-green-dot); }
-.status-badge.error, .badge.errored { background: rgba(222, 85, 85, 0.12); color: var(--cm-red); }
-.status-badge.error .badge-dot, .badge.errored .badge-dot { background: var(--cm-red); }
-.status-badge.off, .badge.stopped { background: rgba(142, 142, 142, 0.12); color: var(--cm-muted); }
-.status-badge.off .badge-dot, .badge.stopped .badge-dot { background: var(--cm-muted); }
+.agy-badge .agy-badge-dot { background: currentColor; }
+.agy-badge.active { background: rgba(67, 128, 180, 0.12); color: var(--cm-blue); }
+.agy-badge.active .agy-badge-dot { background: var(--cm-blue-dot); }
+.agy-badge.ready, .agy-badge.running, .agy-badge.is-Connected { background: rgba(99, 152, 79, 0.12); color: var(--cm-green); }
+.agy-badge.ready .agy-badge-dot, .agy-badge.running .agy-badge-dot, .agy-badge.is-Connected .agy-badge-dot { background: var(--cm-green-dot); }
+.agy-badge.is-Reconnecting { background: rgba(243, 201, 73, 0.12); color: var(--cm-yellow); }
+.agy-badge.is-Reconnecting .agy-badge-dot { background: var(--cm-yellow); }
+.agy-badge.error, .agy-badge.errored, .agy-badge.is-Disconnected { background: rgba(222, 85, 85, 0.12); color: var(--cm-red); }
+.agy-badge.error .agy-badge-dot, .agy-badge.errored .agy-badge-dot, .agy-badge.is-Disconnected .agy-badge-dot { background: var(--cm-red); }
+.agy-badge.off, .agy-badge.stopped { background: rgba(142, 142, 142, 0.12); color: var(--cm-muted); }
+.agy-badge.off .agy-badge-dot, .agy-badge.stopped .agy-badge-dot { background: var(--cm-muted); }
+.agy-empty { display: block; text-align: left; font-size: var(--text-xs, 0.75rem); color: var(--cm-muted); padding: 4px 0; }
 
 .agy-btn {
   height: 24px;
   padding: 0 8px;
   gap: 4px;
   border-radius: var(--radius-md, 0.375rem);
+  border: none;
+  background: var(--cm-secondary);
+  color: var(--cm-secondary-fg);
   font-family: var(--vscode-font-family);
   font-size: var(--text-xs, 0.75rem);
   line-height: 1rem;
   font-weight: var(--font-weight-medium, 500);
-  border: none;
-  outline: none;
-  background: var(--cm-secondary);
-  color: var(--cm-secondary-fg);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  transition: background-color var(--dur-agy) var(--ease-agy), color var(--dur-agy) var(--ease-agy), opacity var(--dur-agy) var(--ease-agy);
 }
-.agy-btn:hover:not(:disabled) { color: var(--cm-text); }
-.agy-btn:disabled { opacity: 0.5; pointer-events: none; cursor: default; }
+.agy-btn:hover:not(:disabled) {
+  background: var(--cm-secondary);
+  color: var(--cm-text);
+}
+.agy-icon-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: var(--radius-md, 0.375rem);
+  border: none;
+  background: transparent;
+  color: var(--cm-muted);
+}
+.agy-icon-btn:hover:not(:disabled),
+.agy-icon-btn:focus-visible:not(:disabled),
+.agy-icon-btn.active {
+  background: var(--cm-secondary);
+  color: var(--cm-text);
+}
+.agy-icon-btn.spinning svg, .agy-btn.spinning svg {
+  animation: agy-spin 0.6s linear infinite;
+}
+.agy-count-pill {
+  background: var(--cm-surface);
+  color: var(--cm-muted);
+  font-family: var(--vscode-font-family);
+  font-weight: var(--font-weight-normal, 400);
+}
+.agy-switch {
+  border: none;
+  background: var(--cm-secondary);
+  transition: background-color 200ms var(--ease-in-out, ease-in-out);
+}
+.agy-switch.on, .agy-switch[aria-checked="true"] {
+  background: var(--cm-accent);
+  border: none;
+}
 
 .mcp-error-text {
   font-family: var(--vscode-font-family);

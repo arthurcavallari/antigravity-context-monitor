@@ -269,6 +269,51 @@ test('app.js asks for no conversation when Antigravity frames it without an id, 
   assert.equal(firstHostId('', false), '');
 });
 
+test('applyTheme preserves live host theme-change postMessage variables across subsequent /api/telemetry polls', () => {
+  const props = new Map();
+  const document = {
+    documentElement: {
+      dataset: {},
+      style: {
+        setProperty: (k, v) => props.set(k, v),
+        removeProperty: (k) => props.delete(k),
+      },
+    },
+  };
+  const window = {};
+  const ctx = vm.createContext({ window, document });
+  vm.runInContext(readFileSync(join(UI_DIR, 'core.js'), 'utf8'), ctx, { filename: 'core.js' });
+  const { applyTheme } = window.ContextMonitor;
+
+  // Initial /api/telemetry poll sets fallback theme vars
+  applyTheme({ mode: 'dark', vars: { '--cm-bg': '#181818', '--cm-text': '#ffffff' } });
+  assert.equal(document.documentElement.dataset.theme, 'dark');
+  assert.equal(props.get('--cm-bg'), '#181818');
+
+  // Host postMessage arrives with live native theme variables
+  applyTheme({
+    themeType: 'light',
+    isDark: false,
+    cssVariables: {
+      '--background': '#f8f9fc',
+      '--foreground': '#121317',
+      '--agy-canvas': '#181818',
+      '--agy-ink-soft': 'color-mix(in srgb, #ffffff 88%, #181818)',
+    },
+  });
+  assert.equal(document.documentElement.dataset.theme, 'light');
+  assert.equal(props.get('--background'), '#f8f9fc');
+  assert.equal(props.has('--cm-bg'), false, 'CM fallback keys removed when --background is present');
+  assert.equal(props.has('--agy-canvas'), false, 'static --agy-canvas not set inline when --background is present');
+  assert.equal(props.has('--agy-ink-soft'), false, 'static --agy-ink-soft not set inline when --background is present');
+
+  // Subsequent /api/telemetry poll must NOT overwrite the live host theme
+  applyTheme({ mode: 'dark', vars: { '--cm-bg': '#181818', '--cm-text': '#ffffff' } });
+  assert.equal(document.documentElement.dataset.theme, 'light');
+  assert.equal(props.has('--cm-bg'), false);
+  assert.equal(props.get('--background'), '#f8f9fc');
+});
+
 test('app.js drills into a subagent on [data-subagent-id] click and returns to auto-sync parent on breadcrumb click', async () => {
   const timers = fakeTimers();
   const appListeners = {};
@@ -326,11 +371,13 @@ test('app.js drills into a subagent on [data-subagent-id] click and returns to a
   await appListeners.click({ target: makeTarget('sub-l1') });
   assert.equal(calls.length, 2);
   assert.equal(calls[1].body.cascadeId, 'sub-l1');
+  assert.equal(window.ContextMonitor.activeConversationId, 'sub-l1');
 
   // Click the ← Parent breadcrumb button pointing back to hostCascadeId ('root-conv')
   await appListeners.click({ target: makeTarget('root-conv') });
   assert.equal(calls.length, 3);
   assert.equal(calls[2].body.cascadeId, '');
+  assert.equal(window.ContextMonitor.activeConversationId, 'root-conv');
 });
 
 test('app.js restores Auto-sync when returning from subagent to workspace-matched root and clears subagent pin on conversation-change', async () => {

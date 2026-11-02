@@ -29,9 +29,9 @@
       servers.length > 0
         ? `<div class="mcp-list-card">${servers
             .map((srv) => {
-              let badgeCls = 'status-badge off';
-              if (srv.isError) badgeCls = 'status-badge error';
-              else if (srv.enabled) badgeCls = 'status-badge ready';
+              let badgeCls = 'agy-badge off';
+              if (srv.isError) badgeCls = 'agy-badge error';
+              else if (srv.enabled) badgeCls = 'agy-badge ready';
 
               return `
                 <div class="mcp-card-row ${srv.enabled ? '' : 'disabled'}">
@@ -40,7 +40,7 @@
                       <span class="mcp-server-name ${srv.enabled ? '' : 'strike'}" title="${esc(srv.fullServerName)}">
                         ${esc(srv.serverName)}
                       </span>
-                      <span class="${badgeCls}"><span class="badge-dot"></span>${esc(formatBadgeLabel(srv.statusBadge))}</span>
+                      <span class="${badgeCls}"><span class="agy-badge-dot"></span>${esc(formatBadgeLabel(srv.statusBadge))}</span>
                     </div>
                     <div class="mcp-card-meta">
                       ${esc(srv.toolCount)} tools (${esc(srv.eagerCount)} eager · ${esc(srv.deferredCount)} deferred) · ~${esc(srv.formattedTokens)}
@@ -53,7 +53,7 @@
                   </div>
                   <div class="mcp-card-actions">
                     <button
-                      class="icon-btn mcp-refresh-btn"
+                      class="agy-icon-btn mcp-refresh-btn"
                       data-server="${esc(srv.fullServerName)}"
                       title="Reload ${esc(srv.serverName)}"
                     >${refreshSvg}</button>
@@ -66,8 +66,8 @@
                       data-enabled="${srv.enabled ? '1' : '0'}"
                       title="Enable or disable ${esc(srv.serverName)}"
                     >
-                      <span class="switch-track ${srv.enabled ? 'on' : ''}">
-                        <span class="switch-thumb"></span>
+                      <span class="agy-switch ${srv.enabled ? 'on' : ''}">
+                        <span class="agy-switch-thumb"></span>
                       </span>
                     </button>
                   </div>
@@ -110,8 +110,8 @@
       </div>
 
       <div class="plan-header" style="margin:14px 0 8px">
-        <span class="plan-title">MCP Servers <span class="count-pill">${servers.length}</span></span>
-        <button id="mcp-refresh-all-btn" class="agy-btn" title="Refresh all MCP servers">
+        <span class="plan-title">MCP Servers <span class="agy-count-pill">${servers.length}</span></span>
+        <button id="mcp-refresh-all-btn" class="agy-btn agy-btn-secondary" title="Refresh all MCP servers">
           ${refreshSvg}<span>Reload All</span>
         </button>
       </div>

@@ -45,21 +45,21 @@
     const autoScroll = Boolean(uiState.logAutoScroll);
     const hideStyle = tailOn ? '' : ' style="display:none"';
     return `
-      <span class="plan-title">Task Logs <span id="diag-log-count-pill" class="count-pill">${
+      <span class="plan-title">Task Logs <span id="diag-log-count-pill" class="agy-count-pill">${
         tailOn ? logsCount : 'Paused'
       }</span></span>
       <div class="mcp-card-actions" style="flex-wrap:wrap">
-        <button id="diag-clear-logs-btn" class="agy-btn"${hideStyle}>Clear</button>
+        <button id="diag-clear-logs-btn" class="agy-btn agy-btn-secondary"${hideStyle}>Clear</button>
         <button id="diag-autoscroll-toggle" type="button" role="switch" aria-checked="${autoScroll}" class="overage-toggle" title="Toggle automatic scrolling to newest log lines"${hideStyle}>
           <span>Auto-scroll</span>
-          <span class="switch-track sm ${autoScroll ? 'on' : ''}">
-            <span class="switch-thumb"></span>
+          <span class="agy-switch sm ${autoScroll ? 'on' : ''}">
+            <span class="agy-switch-thumb"></span>
           </span>
         </button>
         <button id="diag-log-toggle" type="button" role="switch" aria-checked="${tailOn}" class="overage-toggle" title="Toggle live Language Server log tailing">
           <span>Tail</span>
-          <span class="switch-track sm ${tailOn ? 'on' : ''}">
-            <span class="switch-thumb"></span>
+          <span class="agy-switch sm ${tailOn ? 'on' : ''}">
+            <span class="agy-switch-thumb"></span>
           </span>
         </button>
       </div>`;
@@ -80,66 +80,93 @@
                 <div class="mcp-card-info">
                   <div class="mcp-card-title">
                     <span>${esc(t.title)}</span>
-                    <span class="status-badge off"><span class="badge-dot"></span>PID ${esc(t.pid)}</span>
+                    <span class="agy-badge off"><span class="agy-badge-dot"></span>PID ${esc(t.pid)}</span>
                   </div>
-                  <div class="mcp-card-meta" title="${esc(t.workspaceUri)}">
-                    ${esc(t.workspaceUri || 'No workspace')}
-                  </div>
+                  <div class="mcp-card-meta" title="${esc(t.workspaceUri)}">${esc(t.workspaceUri || 'No workspace')}</div>
                 </div>
                 <div class="mcp-card-actions">
-                  <button
-                    class="icon-btn term-kill-btn"
-                    data-terminal-id="${esc(t.terminalId)}"
-                    title="Terminate process ${esc(t.pid)}"
-                  >${closeSvg}</button>
+                  <button class="agy-icon-btn term-kill-btn" data-terminal-id="${esc(t.terminalId)}" title="Terminate process ${esc(t.pid)}">${closeSvg}</button>
                 </div>
               </div>`
             )
             .join('')}</div>`
         : '<div class="empty-hint">No active background terminals</div>';
 
+    const issues = Array.isArray(diagData?.warnings) ? diagData.warnings : Array.isArray(diagData?.issues) ? diagData.issues : [];
+    const issuesHtml =
+      issues.length > 0
+        ? `<div class="mcp-list-card">${issues
+            .map((item) => {
+              const text = typeof item === 'string' ? item : item?.message || item?.title || 'Diagnostic warning';
+              return `<div class="mcp-card-row"><div class="mcp-card-info"><div class="mcp-card-title"><span>${esc(text)}</span></div></div><div class="mcp-card-actions"><button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-summary="${esc(text)}" title="Send diagnostic to Agent">Fix with Agent</button></div></div>`;
+            })
+            .join('')}</div>`
+        : '';
+
     const sidecarsHtml =
       sidecars.length > 0
         ? `<div class="mcp-list-card">${sidecars
             .map((s) => {
-              let badgeCls = 'status-badge off';
-              if (s.isRunning) badgeCls = 'status-badge ready';
-              else if (s.isErrored) badgeCls = 'status-badge error';
+              let badgeCls = 'agy-badge off';
+              if (s.isRunning) badgeCls = 'agy-badge ready';
+              else if (s.isErrored) badgeCls = 'agy-badge error';
+              const isUnhealthy = Boolean(
+                s.isErrored || s.lastError || s.statusBadge === 'ERRORED' || s.statusBadge === 'ERROR' || s.healthy === false
+              );
+              const fixSummary = `Sidecar "${s.displayName || s.sidecarId}" is unhealthy (${s.statusBadge || 'ERRORED'})${
+                s.lastError ? `: ${s.lastError}` : ''
+              }. Please inspect and fix it.`;
+              const fixBtnHtml = isUnhealthy
+                ? `<button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-sidecar-id="${esc(s.sidecarId)}" data-summary="${esc(fixSummary)}" title="Send diagnostic to Agent">Fix with Agent</button>`
+                : '';
 
               return `
                 <div class="mcp-card-row">
                   <div class="mcp-card-info">
                     <div class="mcp-card-title">
                       <span>${esc(s.displayName)}</span>
-                      <span class="${badgeCls}"><span class="badge-dot"></span>${esc(formatBadgeLabel(s.statusBadge))}</span>
+                      <span class="${badgeCls}"><span class="agy-badge-dot"></span>${esc(formatBadgeLabel(s.statusBadge))}</span>
                     </div>
-                    <div class="mcp-card-meta">
-                      ${s.webPort ? `Port ${esc(s.webPort)}` : 'No port'}
-                      ${s.lastError ? ` · ${esc(s.lastError)}` : ''}
-                    </div>
+                    <div class="mcp-card-meta">${s.webPort ? `Port ${esc(s.webPort)}` : 'No port'}${s.lastError ? ` · ${esc(s.lastError)}` : ''}</div>
                   </div>
                   <div class="mcp-card-actions">
-                    <button
-                      class="icon-btn sidecar-restart-btn"
-                      data-sidecar-id="${esc(s.sidecarId)}"
-                      title="Restart ${esc(s.displayName)}"
-                    >${refreshSvg}</button>
+                    ${fixBtnHtml}
+                    <button class="agy-icon-btn sidecar-restart-btn" data-sidecar-id="${esc(s.sidecarId)}" title="Restart ${esc(s.displayName)}">${refreshSvg}</button>
                   </div>
                 </div>`;
             })
             .join('')}</div>`
         : '<div class="empty-hint">No sidecars registered</div>';
 
-    return `
+    return `${issuesHtml}
       <div class="plan-header" style="margin:12px 0 8px">
-        <span class="plan-title">Active Background Terminals <span class="count-pill">${terminals.length}</span></span>
+        <span class="plan-title">Active Background Terminals <span class="agy-count-pill">${terminals.length}</span></span>
       </div>
       <div>${terminalsHtml}</div>
-
       <div class="plan-header" style="margin:12px 0 8px">
-        <span class="plan-title">Sidecar Processes <span class="count-pill">${sidecars.length}</span></span>
+        <span class="plan-title">Sidecar Processes <span class="agy-count-pill">${sidecars.length}</span></span>
       </div>
       <div>${sidecarsHtml}</div>`;
+  }
+
+  async function handleFixWithAgent(targetOrSummary) {
+    const summary =
+      typeof targetOrSummary === 'string'
+        ? targetOrSummary
+        : targetOrSummary?.getAttribute?.('data-summary') ||
+          targetOrSummary?.dataset?.summary ||
+          'Context Monitor diagnostic warning reported.';
+    try {
+      if (typeof window.ContextMonitor?.notifyAgent === 'function') {
+        const res = await window.ContextMonitor.notifyAgent({ message: summary, severity: 'warning', triggerTurn: true, title: 'Context Monitor Diagnostics' });
+        if (res?.ok === false) throw new Error(res.error || 'Notification rejected');
+      }
+      window.ContextMonitor?.showToast?.('Sent diagnostic to Agent', 'info');
+      return { ok: true, message: summary };
+    } catch (err) {
+      window.ContextMonitor?.showToast?.(`Failed to notify Agent: ${err.message}`, 'error');
+      return { ok: false, error: err.message };
+    }
   }
 
   function renderDiagnosticsTab(diagData, uiState = {}) {
@@ -181,12 +208,12 @@
     if (autoBtn) {
       autoBtn.style.display = tailOn ? '' : 'none';
       autoBtn.setAttribute('aria-checked', String(autoScroll));
-      autoBtn.querySelector('.switch-track')?.classList.toggle('on', autoScroll);
+      autoBtn.querySelector('.agy-switch')?.classList.toggle('on', autoScroll);
     }
     const tailBtn = document.getElementById('diag-log-toggle');
     if (tailBtn) {
       tailBtn.setAttribute('aria-checked', String(tailOn));
-      tailBtn.querySelector('.switch-track')?.classList.toggle('on', tailOn);
+      tailBtn.querySelector('.agy-switch')?.classList.toggle('on', tailOn);
     }
 
     const bodyEl = document.getElementById('diag-log-body');
@@ -252,11 +279,16 @@
     }
   }
 
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('click', (e) => {
+      if (e?._cmFixHandled) return;
+      const el = e?.target?.nodeType === 3 ? e.target.parentElement : e?.target;
+      const btn = el?.closest?.('[data-action="fix-with-agent"]');
+      if (btn) { e._cmFixHandled = true; handleFixWithAgent(btn); }
+    });
+  }
+
   Object.assign(window.ContextMonitor, {
-    mergeIncomingLogs,
-    renderDiagnosticsControls,
-    renderDiagnosticsLists,
-    renderDiagnosticsTab,
-    syncDiagnosticsDom,
+    mergeIncomingLogs, renderDiagnosticsControls, renderDiagnosticsLists, renderDiagnosticsTab, syncDiagnosticsDom, handleFixWithAgent,
   });
 })();

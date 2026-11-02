@@ -6,29 +6,15 @@
 
 (function () {
   const {
-    apiCall,
-    applyTheme,
-    esc,
-    renderTopHeaderAndTabs,
-    renderSessionOptions,
-    renderTelemetryPillText,
-    renderContextTab,
-    renderMcpBudgetsTab,
-    mergeIncomingLogs,
-    syncDiagnosticsDom,
-    nextPollDelayMs,
-    readHostVisibility,
+    apiCall, applyTheme, esc, renderTopHeaderAndTabs, renderSessionOptions, renderTelemetryPillText,
+    renderContextTab, renderMcpBudgetsTab, mergeIncomingLogs, syncDiagnosticsDom, nextPollDelayMs, readHostVisibility,
   } = window.ContextMonitor;
 
-  const PULSE_HOLD_MS = 2500;
-  const ACTION_MSG_MS = 4000;
+  const PULSE_HOLD_MS = 2500, ACTION_MSG_MS = 4000;
   const DRAWER_TOGGLES = {
-    '#model-badge-btn': 'modelProfileOpen',
-    '#context-help-btn': 'contextHelpOpen',
-    '#subagents-collapse-toggle': 'subagentsExpanded',
-    '#mcp-collapse-toggle': 'mcpExpanded',
-    '#compactions-collapse-toggle': 'compactionsExpanded',
-    '#effort-fit-collapse-toggle': 'effortFitExpanded',
+    '#model-badge-btn': 'modelProfileOpen', '#context-help-btn': 'contextHelpOpen',
+    '#subagents-collapse-toggle': 'subagentsExpanded', '#mcp-collapse-toggle': 'mcpExpanded',
+    '#compactions-collapse-toggle': 'compactionsExpanded', '#effort-fit-collapse-toggle': 'effortFitExpanded',
     '#culprits-collapse-toggle': 'culpritsExpanded',
   };
 
@@ -52,16 +38,16 @@
   }
 
   const appRoot = document.getElementById('app');
-  let telemetrySeq = 0;
-  let telemetryInFlight = false;
-  let pollTimer = 0;
-  let actionMsgTimer = 0;
-  let pendingConfirm = { key: '', until: 0 };
+  let telemetrySeq = 0, telemetryInFlight = false, pollTimer = 0, pendingConfirm = { key: '', until: 0 };
+  const syncActiveConvId = (activeId = state.lastCascadeId) => {
+    window.ContextMonitor.activeConversationId = state.pinnedCascadeId || activeId || (state.hostCascadeId && state.hostCascadeId !== '_new' ? state.hostCascadeId : '');
+  };
+  syncActiveConvId('');
 
   function ensureShellMounted() {
     if (!appRoot || document.getElementById('card-tab-slot')) return;
-    appRoot.innerHTML = `
-      <section class="context-card">
+    document.getElementById('action-msg-slot')?.remove?.();
+    appRoot.innerHTML = `<section class="context-card">
         <div id="card-header-slot"></div>
         <div id="card-tab-slot" class="tab-slot"></div>
         <div id="action-msg-slot"></div>
@@ -76,13 +62,9 @@
     sel.addEventListener('blur', () => { state.isSelectMenuOpen = false; });
     sel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { state.isSelectMenuOpen = false; sel.blur(); } });
     sel.addEventListener('change', (e) => {
-      state.isSelectMenuOpen = false;
-      state.pinnedCascadeId = e.target.value || '';
-      state.openCheckpoints.clear();
-      state.lastTotalTokens = null;
-      state.lastOptionsSig = '';
-      sel.blur();
-      refreshTelemetry(true);
+      state.isSelectMenuOpen = false; state.pinnedCascadeId = e.target.value || ''; syncActiveConvId();
+      state.openCheckpoints.clear(); state.lastTotalTokens = null; state.lastOptionsSig = '';
+      sel.blur(); refreshTelemetry(true);
     });
   }
 
@@ -95,20 +77,13 @@
   }
 
   function showActionMessage(text, isError = true) {
-    const slot = document.getElementById('action-msg-slot');
-    if (!slot) return;
-    clearTimeout(actionMsgTimer);
-    if (!text) { slot.innerHTML = ''; return; }
-    slot.innerHTML = `<div class="${isError ? 'error-banner' : 'loading-state'} action-msg">${esc(text)}</div>`;
-    actionMsgTimer = setTimeout(() => { slot.innerHTML = ''; }, ACTION_MSG_MS);
+    window.ContextMonitor.showToast?.(text, isError, ACTION_MSG_MS);
   }
 
   // Click-again confirmation: native confirm() is unthemed, blocks the pane, and may be sandboxed away
   function confirmAction(key, message) {
     if (pendingConfirm.key === key && Date.now() < pendingConfirm.until) {
-      pendingConfirm = { key: '', until: 0 };
-      showActionMessage('', false);
-      return true;
+      pendingConfirm = { key: '', until: 0 }; showActionMessage('', false); return true;
     }
     pendingConfirm = { key, until: Date.now() + ACTION_MSG_MS };
     showActionMessage(`${message} Click again to confirm.`, false);
@@ -116,11 +91,7 @@
   }
 
   async function runAction(failureText, path, body) {
-    try {
-      await apiCall(path, body);
-    } catch (err) {
-      showActionMessage(`${failureText}: ${err.message}`);
-    }
+    try { await apiCall(path, body); } catch (err) { showActionMessage(`${failureText}: ${err.message}`); }
   }
 
   async function handleMcpToggle(btn) {
@@ -134,14 +105,14 @@
       srv.isError = false;
       btn.setAttribute('data-enabled', next ? '1' : '0');
       btn.setAttribute('aria-checked', String(next));
-      btn.querySelector('.switch-track')?.classList.toggle('on', next);
+      btn.querySelector('.agy-switch')?.classList.toggle('on', next);
       const row = btn.closest('.mcp-card-row');
       row?.classList.toggle('disabled', !next);
       row?.querySelector('.mcp-server-name')?.classList.toggle('strike', !next);
-      const badge = row?.querySelector('.status-badge');
+      const badge = row?.querySelector('.agy-badge');
       if (badge) {
-        badge.className = `status-badge ${next ? 'ready' : 'off'}`;
-        badge.innerHTML = `<span class="badge-dot"></span>${next ? 'Ready' : 'Off'}`;
+        badge.className = `agy-badge ${next ? 'ready' : 'off'}`;
+        badge.innerHTML = `<span class="agy-badge-dot"></span>${next ? 'Ready' : 'Off'}`;
       }
       state.lastTabHtml = computeTabBodyHtml();
     }
@@ -150,9 +121,9 @@
   }
 
   async function handleAppClick(e) {
-    const target = e.target;
-    if (!(target instanceof Element)) return;
-    const tabBtn = target.closest('.tab-btn');
+    const target = e?.target?.nodeType === 3 ? e.target.parentElement : e?.target;
+    if (!target || typeof target.closest !== 'function') return;
+    const tabBtn = target.closest('.agy-toggle-item');
     if (tabBtn) {
       state.activeTab = tabBtn.getAttribute('data-tab') || 'context';
       state.lastTabHtml = '';
@@ -174,6 +145,7 @@
           '';
         const isAutoRoot = Boolean(autoRootId && targetId === autoRootId);
         state.pinnedCascadeId = isAutoRoot ? '' : targetId;
+        syncActiveConvId();
         state.openCheckpoints.clear();
         state.lastTotalTokens = null;
         state.lastOptionsSig = '';
@@ -191,7 +163,7 @@
       const next = !state.latestData.planUsage.aiCredits.useAiCredits;
       state.latestData.planUsage.aiCredits.useAiCredits = next;
       overageBtn.setAttribute('aria-checked', String(next));
-      overageBtn.querySelector('.switch-track')?.classList.toggle('on', next);
+      overageBtn.querySelector('.agy-switch')?.classList.toggle('on', next);
       state.lastTabHtml = computeTabBodyHtml();
       try {
         await apiCall('/api/ai-credits/toggle', { enabled: next });
@@ -243,6 +215,11 @@
         await runAction('Could not terminate terminal', '/api/terminals/close', { terminalId });
         await refreshDiagnostics();
       }
+      return;
+    }
+    const fixBtn = target.closest('[data-action="fix-with-agent"]');
+    if (fixBtn) {
+      if (!e._cmFixHandled) { e._cmFixHandled = true; await window.ContextMonitor.handleFixWithAgent?.(fixBtn); }
       return;
     }
     const sidecarRestartBtn = target.closest('.sidecar-restart-btn');
@@ -327,6 +304,7 @@
         state.autoRootCascadeId = activeId;
       }
       state.lastCascadeId = activeId;
+      syncActiveConvId(activeId);
       state.lastTotalTokens = totalUsed;
       state.latestData = data;
       state.isRefreshing = false;
@@ -373,7 +351,10 @@
     if (JSON.stringify(next) === JSON.stringify(state.workspaceUris)) return;
     state.workspaceUris = next;
     state.autoRootCascadeId = '';
-    if (!state.hostCascadeId && isPinnedToSubagent()) state.pinnedCascadeId = '';
+    if (!state.hostCascadeId && isPinnedToSubagent()) {
+      state.pinnedCascadeId = '';
+      syncActiveConvId();
+    }
     refreshTelemetry(false, true);
   });
   window.addEventListener('message', (e) => {
@@ -385,6 +366,7 @@
         state.hostCascadeId = e.data.payload.conversationId;
         state.autoRootCascadeId = '';
         if (isPinnedToSubagent()) state.pinnedCascadeId = '';
+        syncActiveConvId();
         refreshTelemetry(false, true);
       }
     }
@@ -416,6 +398,36 @@
     pollTimer = 0;
     if (isPaneVisible()) pollTick();
   }
+
+  let lastSeenMutationAt = 0, activeEs = null, esRetryTimer = 0, esBackoffMs = 1000;
+  function connectStateEvents() {
+    if (typeof window.EventSource !== 'function') return;
+    clearTimeout(esRetryTimer);
+    try { activeEs?.close?.(); } catch {}
+    const token = new URLSearchParams(window.location?.search || '').get('token');
+    const es = (activeEs = new window.EventSource(token ? `/api/events?token=${encodeURIComponent(token)}` : '/api/events'));
+    es.onopen = () => { esBackoffMs = 1000; };
+    const onState = (ev) => {
+      try {
+        const raw = JSON.parse(ev?.data || '{}');
+        const st = raw?.state || raw;
+        if (st?.lastMutationAt && st.lastMutationAt > lastSeenMutationAt) {
+          lastSeenMutationAt = st.lastMutationAt;
+          if (!isPaneVisible()) return;
+          refreshTelemetry(false, true);
+          if (state.activeTab === 'diagnostics') refreshDiagnostics();
+        }
+      } catch { /* ignore malformed SSE payload */ }
+    };
+    es.addEventListener?.('state', onState);
+    es.onmessage = onState;
+    es.onerror = () => {
+      try { es.close?.(); } catch {}
+      esRetryTimer = setTimeout(() => { esBackoffMs = Math.min(esBackoffMs * 2, 30000); connectStateEvents(); }, esBackoffMs);
+    };
+  }
+  if (document.readyState === 'complete') connectStateEvents();
+  else window.addEventListener('load', connectStateEvents, { once: true });
 
   document.addEventListener('visibilitychange', syncPolling);
   syncPolling();

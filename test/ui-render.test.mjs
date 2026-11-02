@@ -298,6 +298,9 @@ test('renderSubagentsDrawer hides when empty and renders L1/L2 hierarchy with XS
   assert.ok(expanded.includes('Inspect'));
   assert.ok(expanded.includes('4.8k in parent'));
   assert.ok(expanded.includes('(#4)'));
+  assert.ok(expanded.includes('class="agy-badge ready"'));
+  assert.ok(expanded.includes('class="agy-badge active"'));
+  assert.ok(expanded.includes('class="agy-badge-dot"'));
 });
 
 test('renderContextTab renders .subagent-banner breadcrumb with Parent and Root navigation when inspecting a subagent', () => {

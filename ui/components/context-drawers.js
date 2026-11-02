@@ -64,7 +64,7 @@
     if (rawStatus === 'Running') cls = 'active';
     else if (rawStatus === 'Error') cls = 'error';
     else if (rawStatus === 'Stopped') cls = 'off';
-    return `<span class="status-badge ${cls}"><span class="badge-dot"></span>${esc(rawStatus)}</span>`;
+    return `<span class="agy-badge ${cls}"><span class="agy-badge-dot"></span>${esc(rawStatus)}</span>`;
   }
 
   function renderSubagentsDrawer(subagents = {}, subagentsExpanded = false, activeCascadeId = '') {
@@ -232,7 +232,7 @@
     let cls = 'active';
     if (status === 'optimal') cls = 'ready';
     else if (status === 'thrashing') cls = 'error';
-    return `<span class="status-badge ${cls}"><span class="badge-dot"></span>${esc(badgeText)}</span>`;
+    return `<span class="agy-badge ${cls}"><span class="agy-badge-dot"></span>${esc(badgeText)}</span>`;
   }
 
   function renderEffortFitDrawer(advisor = {}, effortOpen = false) {
