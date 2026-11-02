@@ -268,3 +268,67 @@ test('app.js asks for no conversation when Antigravity frames it without an id, 
   assert.equal(firstHostId('?conversationId=conv-1', true), 'conv-1');
   assert.equal(firstHostId('', false), '');
 });
+
+test('app.js drills into a subagent on [data-subagent-id] click and returns to auto-sync parent on breadcrumb click', async () => {
+  const timers = fakeTimers();
+  const appListeners = {};
+  const calls = [];
+  const appRoot = {
+    innerHTML: '',
+    addEventListener: (type, fn) => (appListeners[type] = fn),
+  };
+  const document = {
+    hidden: false,
+    getElementById: (id) => (id === 'app' ? appRoot : null),
+    addEventListener() {},
+    documentElement: { style: { setProperty() {}, removeProperty() {} }, dataset: {} },
+  };
+  class Element {}
+  const window = {
+    parent: {},
+    location: { search: '?conversationId=root-conv' },
+    addEventListener() {},
+  };
+  const ctx = vm.createContext({
+    window,
+    document,
+    Element,
+    URLSearchParams,
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+  });
+  for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+  window.ContextMonitor.apiCall = async (path, body) => {
+    calls.push({ path, body });
+    const activeId = body.cascadeId || body.hostCascadeId || 'root-conv';
+    return {
+      isExecuting: false,
+      session: { cascadeId: activeId, isSubagent: activeId !== 'root-conv', parentConversationId: 'root-conv' },
+      context: { totalUsedTokens: 1000 },
+      sessions: [{ cascadeId: 'root-conv', title: 'Root' }],
+    };
+  };
+  vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+  await timers.advance(0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.cascadeId, '');
+  assert.equal(calls[0].body.hostCascadeId, 'root-conv');
+
+  // Click a subagent card / inspect button
+  const makeTarget = (subagentId) =>
+    Object.assign(new Element(), {
+      closest: (sel) =>
+        sel === '[data-subagent-id]'
+          ? { getAttribute: (attr) => (attr === 'data-subagent-id' ? subagentId : null) }
+          : null,
+    });
+
+  await appListeners.click({ target: makeTarget('sub-l1') });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].body.cascadeId, 'sub-l1');
+
+  // Click the ← Parent breadcrumb button pointing back to hostCascadeId ('root-conv')
+  await appListeners.click({ target: makeTarget('root-conv') });
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2].body.cascadeId, '');
+});

@@ -4,7 +4,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  collectSubagentTree,
   formatCeilingCount,
+  formatDurationCompact,
+  formatSubagentTitle,
   formatTokenCount,
   resolveModelMetadata,
   selectActiveTrajectory,
@@ -599,4 +602,278 @@ test('formatTokenCount and formatCeilingCount roll over to M instead of 1000.0k'
   assert.equal(formatCeilingCount(999_999), '1.0M');
   assert.equal(formatCeilingCount(200_000), '200k');
   assert.equal(formatCeilingCount(1_048_576), '1.0M');
+});
+
+test('collectSubagentTree and selectActiveTrajectory resolve L1/L2 hierarchy, models, durations, and subagent drill-down metadata', () => {
+  const modelConfigData = {
+    clientModelConfigs: [
+      {
+        label: 'Gemini 4 Argon (High)',
+        modelOrAlias: { model: 'MODEL_PLACEHOLDER_M73' },
+        modelId: 'gemini-4-argon-high',
+      },
+      {
+        label: 'Gemini 3.8 Flash (Low)',
+        modelOrAlias: { model: 'MODEL_PLACEHOLDER_M81' },
+        modelId: 'gemini-3.8-flash-low',
+      },
+    ],
+  };
+
+  const nowMs = Date.parse('2026-11-02T10:05:00Z');
+  const trajectoriesResponse = {
+    trajectorySummaries: {
+      'root-conv': {
+        summary: 'Root Feature Task',
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 25,
+        annotations: { title: 'Root Feature Task', lastUserViewTime: '2026-11-02T10:04:00Z' },
+        trajectoryMetadata: { rootConversationId: 'root-conv' },
+      },
+      'sub-l1-b': {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 8,
+        createdTime: '2026-11-02T10:02:00Z',
+        lastModifiedTime: '2026-11-02T10:02:45Z',
+        latestExecutorTerminationReason: 'EXECUTOR_TERMINATION_REASON_ERROR',
+        trajectoryMetadata: {
+          parentConversationId: 'root-conv',
+          rootConversationId: 'root-conv',
+          nestingDepth: 1,
+          subagentSpec: {
+            typeName: 'code-reviewer',
+            role: 'Security Reviewer',
+            model: 'MODEL_PLACEHOLDER_M81',
+          },
+        },
+      },
+      'sub-l2-worker': {
+        status: 'CASCADE_RUN_STATUS_RUNNING',
+        stepCount: 6,
+        createdTime: '2026-11-02T10:01:30Z',
+        lastModifiedTime: '2026-11-02T10:04:00Z',
+        trajectoryMetadata: {
+          parentConversationId: 'sub-l1-a',
+          rootConversationId: 'root-conv',
+          nestingDepth: 2,
+          subagentSpec: {
+            typeName: 'research',
+            role: 'AST Scanner',
+            inherit: true,
+          },
+        },
+      },
+      'sub-l1-a': {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 14,
+        createdTime: '2026-11-02T10:01:00Z',
+        lastModifiedTime: '2026-11-02T10:04:12Z',
+        trajectoryMetadata: {
+          parentConversationId: 'root-conv',
+          rootConversationId: 'root-conv',
+          nestingDepth: 1,
+          subagentSpec: {
+            typeName: 'argon-840k',
+            role: 'Architecture Coordinator',
+            model: 'MODEL_PLACEHOLDER_M73',
+          },
+        },
+      },
+    },
+  };
+
+  assert.equal(formatDurationCompact('2026-11-02T10:00:00Z', '2026-11-02T10:00:42Z', false, nowMs), '42s');
+  assert.equal(formatDurationCompact('2026-11-02T10:01:00Z', '2026-11-02T10:04:12Z', false, nowMs), '3m 12s');
+  assert.equal(formatDurationCompact('2026-11-02T08:41:00Z', '2026-11-02T10:00:00Z', false, nowMs), '1h 19m');
+  assert.equal(formatSubagentTitle(trajectoriesResponse.trajectorySummaries['sub-l1-a'], 'sub-l1-a'), 'Architecture Coordinator (argon-840k)');
+
+  const tree = collectSubagentTree(trajectoriesResponse, 'root-conv', 'root-conv', modelConfigData, nowMs);
+  assert.equal(tree.totalCount, 3);
+  assert.equal(tree.runningCount, 1);
+  assert.equal(tree.totalSteps, 28);
+  assert.equal(tree.activeSubagentLabel, 'AST Scanner (research)');
+
+  // Topological + chronological order: sub-l1-a (10:01:00), then its L2 child sub-l2-worker, then sub-l1-b (10:02:00)
+  assert.deepEqual(
+    tree.items.map((x) => x.cascadeId),
+    ['sub-l1-a', 'sub-l2-worker', 'sub-l1-b']
+  );
+  assert.equal(tree.items[0].nestingDepth, 1);
+  assert.equal(tree.items[0].modelBadge, 'Gemini 4 Argon (High)');
+  assert.equal(tree.items[0].durationFormatted, '3m 12s');
+  assert.equal(tree.items[0].statusBadge, 'Done');
+
+  assert.equal(tree.items[1].nestingDepth, 2);
+  assert.equal(tree.items[1].inherit, true);
+  assert.equal(tree.items[1].modelBadge, 'Inherited');
+  assert.equal(tree.items[1].isRunning, true);
+  assert.equal(tree.items[1].statusBadge, 'Running');
+  assert.equal(tree.items[1].durationFormatted, '3m 30s'); // live elapsed to nowMs (10:05:00 - 10:01:30)
+
+  assert.equal(tree.items[2].nestingDepth, 1);
+  assert.equal(tree.items[2].modelBadge, 'Gemini 3.8 Flash (Low)');
+  assert.equal(tree.items[2].isError, true);
+  assert.equal(tree.items[2].statusBadge, 'Error');
+  assert.equal(tree.items[2].durationFormatted, '45s');
+
+  // Inspecting L2 subagent populates parent/root breadcrumb fields and keeps subagents anchored to root-conv
+  const subSelected = selectActiveTrajectory(trajectoriesResponse, {
+    requestedCascadeId: 'sub-l2-worker',
+    hostCascadeId: 'root-conv',
+    modelConfigData,
+    nowMs,
+  });
+  assert.equal(subSelected.activeSession.cascadeId, 'sub-l2-worker');
+  assert.equal(subSelected.activeSession.isSubagent, true);
+  assert.equal(subSelected.activeSession.parentConversationId, 'sub-l1-a');
+  assert.equal(subSelected.activeSession.parentTitle, 'Architecture Coordinator (argon-840k)');
+  assert.equal(subSelected.activeSession.rootConversationId, 'root-conv');
+  assert.equal(subSelected.activeSession.rootTitle, 'Root Feature Task');
+  assert.equal(subSelected.activeSession.nestingDepth, 2);
+  assert.equal(subSelected.activeSession.typeName, 'research');
+  assert.equal(subSelected.activeSession.role, 'AST Scanner');
+  assert.equal(subSelected.subagents.rootCascadeId, 'root-conv');
+  assert.equal(subSelected.subagents.totalCount, 3);
+  assert.equal(subSelected.subagents.items[1].isActive, true);
+  // Root sessions list must never be polluted with subagent UUIDs
+  assert.deepEqual(
+    subSelected.sessions.map((s) => s.cascadeId),
+    ['root-conv']
+  );
+});
+
+test('fetchFullTelemetry enforces zero-RPC parent polling for subagents and loads subagent detail only on demand', async () => {
+  const detailCalls = [];
+  const options = {
+    lsAddress: '127.0.0.1:59985',
+    csrfToken: 'mock-csrf',
+    configPath: join(tmpdir(), 'nonexistent-agy-config.json'),
+    hostCascadeId: 'root-1',
+    nowMs: Date.parse('2026-11-02T12:00:00Z'),
+    fetchFn: async (url, init) => {
+      const method = url.slice(url.lastIndexOf('/') + 1);
+      const req = JSON.parse(init?.body || '{}');
+      let body = {};
+      if (method === 'GetAllCascadeTrajectories') {
+        body = {
+          trajectorySummaries: {
+            'root-1': {
+              summary: 'Main Task',
+              status: 'CASCADE_RUN_STATUS_IDLE',
+              stepCount: 3,
+              lastModifiedTime: '2026-11-02T11:59:00Z',
+              annotations: { title: 'Main Task', lastUserViewTime: '2026-11-02T11:59:00Z' },
+              trajectoryMetadata: { rootConversationId: 'root-1' },
+            },
+            'sub-1': {
+              status: 'CASCADE_RUN_STATUS_IDLE',
+              stepCount: 5,
+              createdTime: '2026-11-02T11:58:00Z',
+              lastModifiedTime: '2026-11-02T11:58:50Z',
+              trajectoryMetadata: {
+                parentConversationId: 'root-1',
+                rootConversationId: 'root-1',
+                nestingDepth: 1,
+                subagentSpec: { typeName: 'research', role: 'Codebase Researcher', inherit: true },
+              },
+            },
+          },
+        };
+      } else if (method === 'GetCascadeTrajectorySteps') {
+        detailCalls.push({ method, cascadeId: req.cascadeId });
+        if (req.cascadeId === 'root-1') {
+          body = {
+            steps: [
+              { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'audit repo' } },
+              {
+                type: 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT',
+                invokeSubagent: {
+                  subagents: [{ typeName: 'research', role: 'Codebase Researcher', initialPrompt: 'Check all exports in lib/' }],
+                  results: [{ conversationId: 'sub-1' }],
+                },
+              },
+              {
+                type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+                systemMessage: {
+                  message: '[Message] timestamp=2026-11-02T11:58:50Z sender=sub-1 priority=NORMAL content=All exports verified.',
+                },
+              },
+            ],
+          };
+        } else {
+          body = {
+            steps: [
+              {
+                type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+                metadata: { source: 'CORTEX_STEP_SOURCE_SYSTEM' },
+                systemMessage: {
+                  message: '[Message] timestamp=2026-11-02T11:58:00Z sender=root-1 priority=NORMAL content=Check all exports in lib/',
+                },
+              },
+              { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'All exports verified.' } },
+            ],
+          };
+        }
+      } else if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
+        detailCalls.push({ method, cascadeId: req.cascadeId });
+        body = {
+          generatorMetadata:
+            req.generatorMetadataOffset > 0
+              ? []
+              : [
+                  {
+                    stepIndices: [1],
+                    chatModel: {
+                      usage: { inputTokens: '8000', cacheReadTokens: '2000', outputTokens: '200' },
+                      chatStartMetadata: {
+                        contextWindowMetadata: {
+                          tokenBreakdown: {
+                            groups: [
+                              {
+                                type: 'TOKEN_TYPE_CHAT_MESSAGES',
+                                numTokens: 3200,
+                                children: [
+                                  { name: 'Step 1 (INVOKE_SUBAGENT)', numTokens: 400 },
+                                  { name: 'Step 2 (SYSTEM_MESSAGE)', numTokens: 2800 },
+                                ],
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    },
+                  },
+                ],
+        };
+      }
+      return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+    },
+  };
+
+  clearRpcCache();
+  clearConversationDetails();
+
+  // 1. Polling parent conversation must NEVER fetch sub-1 steps or generatorMetadata
+  const parentTelemetry = await fetchFullTelemetry(options);
+  assert.ok(detailCalls.every((c) => c.cascadeId === 'root-1'));
+  assert.equal(parentTelemetry.subagents.totalCount, 1);
+  assert.equal(parentTelemetry.subagents.parentContextTokens, 3200);
+  assert.equal(parentTelemetry.subagents.formattedParentContextTokens, '3.2k');
+  assert.equal(parentTelemetry.subagents.items[0].spawnStepIndex, 1);
+  assert.equal(parentTelemetry.subagents.items[0].promptPreview, 'Check all exports in lib/');
+  assert.deepEqual(parentTelemetry.subagents.items[0].replyStepIndices, [2]);
+  assert.equal(parentTelemetry.subagents.items[0].parentContextTokens, 3200);
+
+  // 2. Drilling down into sub-1 fetches sub-1 on-demand and preserves parent enrichment from cache
+  detailCalls.length = 0;
+  const subTelemetry = await fetchFullTelemetry({ ...options, cascadeId: 'sub-1' });
+  assert.ok(detailCalls.length > 0 && detailCalls.every((c) => c.cascadeId === 'sub-1'));
+  assert.equal(subTelemetry.session.cascadeId, 'sub-1');
+  assert.equal(subTelemetry.session.isSubagent, true);
+  assert.equal(subTelemetry.subagents.items[0].promptPreview, 'Check all exports in lib/');
+  assert.equal(subTelemetry.turnInsights.effortAdvisor.totalTurns, 1);
+  assert.equal(subTelemetry.turnInsights.effortAdvisor.latestTurnFit.promptPreview, 'Check all exports in lib/');
+
+  clearConversationDetails();
+  clearRpcCache();
 });

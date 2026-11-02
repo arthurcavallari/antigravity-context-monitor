@@ -9,20 +9,30 @@
     esc,
     icon,
     renderHeaderDrawers,
+    renderSubagentsDrawer,
     renderMcpTreeDrawer,
     renderCompactionsDrawer,
     renderEffortFitDrawer,
     renderCulpritsDrawer,
   } = window.ContextMonitor;
 
-  function renderTopHeaderAndTabs(data, state, isPulseActive) {
+  function renderTopHeaderAndTabs(data, state = {}, isPulseActive = false) {
     const refreshSvg = icon('refresh', 14);
-    const { model = {}, context = {} } = data;
+    const { model = {}, context = {}, session = {}, subagents = {} } = data || {};
     const badgeClass = model.isGemini === false ? 'model-badge claude' : 'model-badge';
     const risk = context.compactionRisk || 'normal';
     const usageCls = risk === 'warn' || risk === 'danger' ? `cw-Usage-text ${risk}` : 'cw-Usage-text';
     const ceilingText = context.formattedCeiling || '256k';
     const nativeText = context.formattedNativeCeiling || model.nativeCeilingFormatted || '1.0M';
+    const sessionRunning = session?.status === 'CASCADE_RUN_STATUS_RUNNING';
+    const subagentsRunning = Number(subagents?.runningCount || 0) > 0;
+    const pulseActive = Boolean(isPulseActive || sessionRunning || subagentsRunning);
+    const pulseTitle =
+      !sessionRunning && subagentsRunning
+        ? `Subagent executing: ${esc(subagents.activeSubagentLabel || 'subagent')}`
+        : pulseActive
+        ? 'Agent turn executing / consuming tokens'
+        : 'Idle';
 
     return `
       <header class="cw-header">
@@ -31,7 +41,7 @@
           <button id="model-badge-btn" class="${badgeClass} clickable" title="Click to view model profile &amp; specs">
             ${esc(model.badgeLabel || 'Gemini')} <span class="badge-chevron ${state.modelProfileOpen ? 'open' : ''}">▾</span>
           </button>
-          <span class="activity-pulse ${isPulseActive ? 'active' : ''}" title="${isPulseActive ? 'Agent turn executing / consuming tokens' : 'Idle'}"></span>
+          <span class="activity-pulse ${pulseActive ? 'active' : ''}" title="${pulseTitle}"></span>
         </div>
         <div class="cw-summary-group">
           <span class="${usageCls}" title="Cortex autocompact ceiling: ${esc(ceilingText)} · Native model window: ${esc(nativeText)}">
@@ -50,9 +60,21 @@
   }
 
   function renderSessionOptions(sessions = [], session = {}, pinnedId = '') {
-    const activeTitle = session?.title || 'Current conversation';
+    const isSubagentPinned = Boolean(
+      session?.isSubagent && pinnedId && !sessions.some((s) => s.cascadeId === pinnedId)
+    );
+    const activeTitle =
+      (isSubagentPinned ? session?.rootTitle || session?.parentTitle : session?.title) ||
+      'Current conversation';
     return [
       `<option value="" ${!pinnedId ? 'selected' : ''}>Auto-sync: ${esc(activeTitle)}</option>`,
+      ...(isSubagentPinned
+        ? [
+            `<option value="${esc(pinnedId)}" selected>Subagent: ${esc(
+              session.title || pinnedId
+            )}</option>`,
+          ]
+        : []),
       ...sessions.map(
         (s) =>
           `<option value="${esc(s.cascadeId)}" ${pinnedId === s.cascadeId ? 'selected' : ''}>Pin: ${esc(s.title)}</option>`
@@ -70,11 +92,37 @@
     return `in ${inFormatted}k · cache ${cacheFormatted}k${hitSuffix}`;
   }
 
+  function renderSubagentBanner(session = {}) {
+    if (!session?.isSubagent) return '';
+    const parentId = session.parentConversationId || session.rootConversationId || '';
+    const parentTitle = session.parentTitle || 'Parent';
+    const rootId = session.rootConversationId || parentId;
+    const rootTitle = session.rootTitle || 'Root';
+    const depth = Math.max(1, Number(session.nestingDepth) || 1);
+    const labelText = session.title || session.role || session.typeName || 'Subagent';
+    const rootBtnHtml =
+      depth > 1 && rootId
+        ? `<button type="button" class="agy-btn subagent-root-btn" data-subagent-id="${esc(rootId)}" title="Return to root conversation: ${esc(rootTitle)}">Root</button>`
+        : '';
+
+    return `
+      <div class="subagent-banner">
+        <div class="subagent-banner-nav">
+          <button type="button" class="agy-btn subagent-back-btn" data-subagent-id="${esc(parentId)}" title="Return to parent conversation: ${esc(parentTitle)}">← Parent: ${esc(parentTitle)}</button>
+          ${rootBtnHtml}
+        </div>
+        <span class="subagent-banner-label" title="${esc(labelText)}">
+          <span class="fit-pill">L${esc(depth)}</span>
+          <strong>${esc(labelText)}</strong>
+        </span>
+      </div>`;
+  }
+
   function renderContextTab(data, uiState = {}) {
   if (data.newConversation && !data.session) {
     return '<div class="empty-hint">No conversation yet. Its context appears here once you send the first message.</div>';
   }
-  const { context = {}, planUsage = {}, turnInsights = {} } = data;
+  const { context = {}, planUsage = {}, turnInsights = {}, session = {}, subagents = {} } = data;
   const categories = Array.isArray(context.categories) ? context.categories : [];
   const mcp = context.mcp || { servers: [], formattedTotalTokens: '0', totalToolCount: 0 };
   const perf = turnInsights.performance || {};
@@ -113,6 +161,12 @@
     })
     .join('');
 
+  const subagentBannerHtml = renderSubagentBanner(session);
+  const subagentsHtml = renderSubagentsDrawer(
+    subagents,
+    Boolean(uiState.subagentsExpanded),
+    session?.cascadeId || ''
+  );
   const mcpTreeHtml = renderMcpTreeDrawer(mcp, Boolean(uiState.mcpExpanded));
   const compactionsHtml = renderCompactionsDrawer(
     compaction,
@@ -223,9 +277,11 @@
       : 'No AI credits used in this session';
 
   return `
+    ${subagentBannerHtml}
     <div class="segmented-bar">${barSegmentsHtml}</div>
     <div class="breakdown-list">
       ${rowsHtml}
+      ${subagentsHtml}
       ${mcpTreeHtml}
       ${compactionsHtml}
       ${effortFitHtml}

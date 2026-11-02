@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractTurnPerformanceAndBudgets } from '../lib/turn-insights.mjs';
+import {
+  describeChatStep,
+  enrichSubagentsFromParentSteps,
+  extractTurnPerformanceAndBudgets,
+  parseInterAgentMessage,
+} from '../lib/turn-insights.mjs';
+import {
+  analyzeModelAndEffortFit,
+  extractPromptSnippet,
+  groupIntoUserTurns,
+} from '../lib/effort-advisor.mjs';
 
 test('extractTurnPerformanceAndBudgets computes TTFT, TPS, cache hit %, compactions, top steps, and budgets', () => {
   const generatorMetadataList = [
@@ -155,4 +165,162 @@ test('extractTurnPerformanceAndBudgets estimates Claude thinking and derives res
   assert.equal(performance.sessionThinkingTokens, 353);
   assert.equal(performance.sessionResponseTokens, 247);
   assert.equal(performance.sessionThinkingEstimated, true);
+});
+
+test('describeChatStep and enrichSubagentsFromParentSteps attribute INVOKE_SUBAGENT and SYSTEM_MESSAGE replies', () => {
+  const subUuid = 'b8d05534-e0b4-4ef2-b302-078279236fd1';
+  const rawMsg = `[Message] timestamp=2026-11-02T10:12:00Z sender=${subUuid} priority=HIGH content=Completed static AST scan\nFound 0 regressions.`;
+
+  const parsed = parseInterAgentMessage(rawMsg);
+  assert.deepEqual(parsed, {
+    timestamp: '2026-11-02T10:12:00Z',
+    sender: subUuid,
+    priority: 'HIGH',
+    content: 'Completed static AST scan\nFound 0 regressions.',
+  });
+  assert.equal(parseInterAgentMessage('normal system text'), null);
+
+  const steps = [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'run audit' } },
+    {
+      type: 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT',
+      invokeSubagent: {
+        subagents: [
+          {
+            typeName: 'argon-840k',
+            role: 'Deep Auditor',
+            initialPrompt: 'Inspect all files in lib/ and verify RPC caching invariants.',
+          },
+        ],
+        results: [{ conversationId: subUuid }],
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+      systemMessage: { message: rawMsg },
+    },
+  ];
+
+  const spawnDesc = describeChatStep('Step 1 (INVOKE_SUBAGENT)', steps);
+  assert.deepEqual(spawnDesc, {
+    name: 'Step 1 (INVOKE_SUBAGENT)',
+    label: 'Spawned argon-840k (Deep Auditor)',
+    stepRef: '#1',
+    badge: 'Subagent',
+    subagentId: subUuid,
+  });
+
+  const replyDesc = describeChatStep('Step 2 (SYSTEM_MESSAGE)', steps);
+  assert.deepEqual(replyDesc, {
+    name: 'Step 2 (SYSTEM_MESSAGE)',
+    label: 'Subagent reply: argon-840k',
+    stepRef: '#2',
+    badge: 'Subagent',
+    subagentId: subUuid,
+  });
+
+  const breakdownGroups = [
+    {
+      type: 'TOKEN_TYPE_CHAT_MESSAGES',
+      children: [
+        { name: 'Step 0 (USER_INPUT)', numTokens: 120 },
+        { name: 'Step 1 (INVOKE_SUBAGENT)', numTokens: 350 },
+        { name: 'Step 2 (SYSTEM_MESSAGE)', numTokens: 4650 },
+      ],
+    },
+  ];
+
+  const enriched = enrichSubagentsFromParentSteps(
+    {
+      totalCount: 1,
+      runningCount: 0,
+      items: [{ cascadeId: subUuid, typeName: 'argon-840k', role: 'Deep Auditor' }],
+    },
+    steps,
+    breakdownGroups
+  );
+
+  assert.equal(enriched.parentContextTokens, 5000);
+  assert.equal(enriched.formattedParentContextTokens, '5.0k');
+  assert.equal(enriched.items[0].spawnStepIndex, 1);
+  assert.equal(enriched.items[0].spawnStepRef, '#1');
+  assert.equal(
+    enriched.items[0].initialPrompt,
+    'Inspect all files in lib/ and verify RPC caching invariants.'
+  );
+  assert.equal(
+    enriched.items[0].promptPreview,
+    'Inspect all files in lib/ and verify RPC caching invariants.'
+  );
+  assert.deepEqual(enriched.items[0].replyStepIndices, [2]);
+  assert.equal(enriched.items[0].parentContextTokens, 5000);
+  assert.equal(enriched.items[0].formattedParentContextTokens, '5.0k');
+});
+
+test('groupIntoUserTurns and extractPromptSnippet segment subagent turns on incoming [Message] system steps', () => {
+  const parentUuid = '646cfcd4-6510-4dfb-b489-b53e697dfc1e';
+  const subagentSteps = [
+    {
+      type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+      metadata: { source: 'CORTEX_STEP_SOURCE_SYSTEM' },
+      systemMessage: {
+        message: `[Message] timestamp=2026-11-02T10:00:00Z sender=${parentUuid} priority=NORMAL content=Scan lib/session-resolver.mjs for subagent fields`,
+      },
+    },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE', viewFile: { absolutePathUri: 'file:///repo/lib/session-resolver.mjs' } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Done first task.' } },
+    {
+      type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+      metadata: { source: 'CORTEX_STEP_SOURCE_SYSTEM' },
+      systemMessage: {
+        message: `[Message] timestamp=2026-11-02T10:02:00Z sender=${parentUuid} priority=NORMAL content=Verify UI escaping now`,
+      },
+    },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Verified.' } },
+  ];
+
+  assert.equal(
+    extractPromptSnippet(subagentSteps[0]),
+    'Scan lib/session-resolver.mjs for…'
+  );
+  assert.equal(extractPromptSnippet(subagentSteps[3]), 'Verify UI escaping now');
+
+  const genMeta = [
+    {
+      stepIndices: [1, 2],
+      chatModel: {
+        model: 'MODEL_PLACEHOLDER_M73',
+        timeToFirstToken: '2.0s',
+        usage: { inputTokens: '12000', outputTokens: '300', thinkingOutputTokens: '450' },
+      },
+    },
+    {
+      stepIndices: [4],
+      chatModel: {
+        model: 'MODEL_PLACEHOLDER_M73',
+        timeToFirstToken: '1.8s',
+        usage: { inputTokens: '14000', outputTokens: '100', thinkingOutputTokens: '50' },
+      },
+    },
+  ];
+
+  const turns = groupIntoUserTurns(genMeta, subagentSteps);
+  assert.equal(turns.length, 2);
+  assert.equal(turns[0].startStepIdx, 0);
+  assert.equal(turns[0].endStepIdx, 3);
+  assert.equal(turns[1].startStepIdx, 3);
+  assert.equal(turns[1].endStepIdx, 5);
+
+  const advisor = analyzeModelAndEffortFit(genMeta, subagentSteps, {
+    clientModelConfigs: [
+      {
+        label: 'Gemini 4 Argon (High)',
+        modelId: 'gemini-4-argon-high',
+        modelOrAlias: { model: 'MODEL_PLACEHOLDER_M73' },
+      },
+    ],
+  });
+  assert.equal(advisor.totalTurns, 2);
+  assert.equal(advisor.latestTurnFit.promptPreview, 'Verify UI escaping now');
+  assert.equal(advisor.latestTurnFit.status, 'unused_effort');
 });

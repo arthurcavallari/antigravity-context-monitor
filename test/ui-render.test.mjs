@@ -218,3 +218,141 @@ test('renderContextTab shows the server-formatted estimate and (est.) in the per
   assert.ok(exact.includes('247 / 353'));
   assert.ok(!exact.includes('(est.)'));
 });
+
+test('renderTopHeaderAndTabs disambiguates idle parent with running subagent in .activity-pulse tooltip', () => {
+  const headerHtml = ui.renderTopHeaderAndTabs(
+    {
+      session: { cascadeId: 'root-1', status: 'CASCADE_RUN_STATUS_IDLE' },
+      subagents: {
+        totalCount: 2,
+        runningCount: 1,
+        activeSubagentLabel: `DeepCoder ${HOSTILE}`,
+      },
+      model: { badgeLabel: 'Gemini 4 Argon (High)' },
+      context: { formattedUsed: '42.0k', formattedCeiling: '256k', formattedUsedPct: '16.4%' },
+    },
+    { activeTab: 'context' },
+    false
+  );
+
+  assert.ok(!headerHtml.includes(HOSTILE));
+  assert.ok(
+    headerHtml.includes(
+      `class="activity-pulse active" title="Subagent executing: DeepCoder ${HOSTILE_ESCAPED}"`
+    )
+  );
+});
+
+test('renderSubagentsDrawer hides when empty and renders L1/L2 hierarchy with XSS escaping when expanded', () => {
+  assert.equal(ui.renderSubagentsDrawer({ totalCount: 0, items: [] }, true), '');
+
+  const subagents = {
+    totalCount: 2,
+    runningCount: 1,
+    totalSteps: 19,
+    formattedParentContextTokens: '4.8k',
+    items: [
+      {
+        cascadeId: 'sub-l1',
+        nestingDepth: 1,
+        typeName: 'argon-840k',
+        role: 'Coordinator',
+        title: `Coordinator ${HOSTILE}`,
+        modelBadge: `Gemini 4 Argon ${HOSTILE}`,
+        statusBadge: 'Done',
+        isRunning: false,
+        stepCount: 12,
+        durationFormatted: '2m 10s',
+        formattedParentContextTokens: '4.8k',
+        spawnStepRef: '#4',
+        promptPreview: `Prompt ${HOSTILE}`,
+      },
+      {
+        cascadeId: `sub-l2-${HOSTILE}`,
+        nestingDepth: 2,
+        typeName: 'research',
+        role: 'Worker',
+        title: 'Worker (research)',
+        modelBadge: 'Inherited',
+        statusBadge: 'Running',
+        isRunning: true,
+        stepCount: 7,
+        durationFormatted: '35s',
+        promptPreview: 'Check ast',
+      },
+    ],
+  };
+
+  const collapsed = ui.renderSubagentsDrawer(subagents, false, 'root-1');
+  assert.ok(collapsed.includes('Subagents (2)'));
+  assert.ok(collapsed.includes('1 running · 19 steps · 4.8k in context'));
+  assert.ok(!collapsed.includes('subagent-card'));
+
+  const expanded = ui.renderSubagentsDrawer(subagents, true, 'sub-l1');
+  assert.ok(!expanded.includes(HOSTILE));
+  assert.ok(expanded.includes(HOSTILE_ESCAPED));
+  assert.ok(expanded.includes('↳ L2'));
+  assert.ok(expanded.includes('data-subagent-id="sub-l1"'));
+  assert.ok(expanded.includes(`data-subagent-id="sub-l2-${HOSTILE_ESCAPED}"`));
+  assert.ok(expanded.includes('Viewing'));
+  assert.ok(expanded.includes('Inspect'));
+  assert.ok(expanded.includes('4.8k in parent'));
+  assert.ok(expanded.includes('(#4)'));
+});
+
+test('renderContextTab renders .subagent-banner breadcrumb with Parent and Root navigation when inspecting a subagent', () => {
+  const l2Html = ui.renderContextTab({
+    session: {
+      cascadeId: 'sub-l2',
+      isSubagent: true,
+      parentConversationId: 'sub-l1',
+      parentTitle: `L1 Coord ${HOSTILE}`,
+      rootConversationId: 'root-1',
+      rootTitle: `Root ${HOSTILE}`,
+      nestingDepth: 2,
+      title: `Worker ${HOSTILE}`,
+    },
+    context: { categories: [] },
+    planUsage: {},
+    turnInsights: {
+      culprits: {
+        topStepsTokens: 3200,
+        formattedTopStepsTokens: '3.2k top 1',
+        topChatSteps: [
+          {
+            name: 'Step 2 (SYSTEM_MESSAGE)',
+            label: 'Subagent reply: research',
+            badge: 'Subagent',
+            stepRef: '#2',
+            subagentId: 'sub-l2',
+            tokens: 3200,
+            formattedTokens: '3.2k',
+            barPct: 100,
+          },
+        ],
+        promptSections: [],
+      },
+    },
+  }, { culpritsExpanded: true });
+
+  assert.ok(!l2Html.includes(HOSTILE));
+  assert.ok(l2Html.includes('class="subagent-banner"'));
+  assert.ok(l2Html.includes(`← Parent: L1 Coord ${HOSTILE_ESCAPED}`));
+  assert.ok(l2Html.includes('data-subagent-id="sub-l1"'));
+  assert.ok(l2Html.includes('class="agy-btn subagent-root-btn" data-subagent-id="root-1"'));
+  assert.ok(l2Html.includes('class="fit-card subagent-culprit clickable"'));
+
+  const optsHtml = ui.renderSessionOptions(
+    [{ cascadeId: 'root-1', title: 'Root Session' }],
+    {
+      cascadeId: 'sub-l2',
+      isSubagent: true,
+      title: `Worker ${HOSTILE}`,
+      rootTitle: 'Root Session',
+    },
+    'sub-l2'
+  );
+  assert.ok(!optsHtml.includes(HOSTILE));
+  assert.match(optsHtml, /<option value="sub-l2" selected>Subagent: Worker &lt;img/);
+  assert.equal((optsHtml.match(/Pin:/g) || []).length, 1);
+});

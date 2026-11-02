@@ -25,6 +25,7 @@
   const DRAWER_TOGGLES = {
     '#model-badge-btn': 'modelProfileOpen',
     '#context-help-btn': 'contextHelpOpen',
+    '#subagents-collapse-toggle': 'subagentsExpanded',
     '#mcp-collapse-toggle': 'mcpExpanded',
     '#compactions-collapse-toggle': 'compactionsExpanded',
     '#effort-fit-collapse-toggle': 'effortFitExpanded',
@@ -37,7 +38,7 @@
   const state = {
     activeTab: 'context', pinnedCascadeId: '',
     hostCascadeId: window.sidecar?.conversationId || new URLSearchParams(window.location.search).get('conversationId') || (isFramed ? '_new' : ''),
-    workspaceUris: [], mcpExpanded: false, compactionsExpanded: false, effortFitExpanded: false, culpritsExpanded: false,
+    workspaceUris: [], subagentsExpanded: false, mcpExpanded: false, compactionsExpanded: false, effortFitExpanded: false, culpritsExpanded: false,
     contextHelpOpen: false, modelProfileOpen: false, openCheckpoints: new Set(), logTailingEnabled: false,
     logAutoScroll: true, isProgrammaticScroll: false, logBuffer: [], renderedLogCount: 0, isRefreshing: false,
     lastTotalTokens: null, lastCascadeId: '', lastTokenChangeAt: 0, lastHeaderHtml: '', lastTabHtml: '',
@@ -82,7 +83,7 @@
   function computeTabBodyHtml() {
     if (state.activeTab === 'mcp') return renderMcpBudgetsTab(state.latestData);
     return renderContextTab(state.latestData, {
-      mcpExpanded: state.mcpExpanded, compactionsExpanded: state.compactionsExpanded,
+      subagentsExpanded: state.subagentsExpanded, mcpExpanded: state.mcpExpanded, compactionsExpanded: state.compactionsExpanded,
       effortFitExpanded: state.effortFitExpanded, culpritsExpanded: state.culpritsExpanded, openCheckpoints: state.openCheckpoints,
     });
   }
@@ -155,6 +156,21 @@
     }
     for (const [selector, stateKey] of Object.entries(DRAWER_TOGGLES)) {
       if (target.closest(selector)) { state[stateKey] = !state[stateKey]; render(); return; }
+    }
+    const subagentTarget = target.closest('[data-subagent-id]');
+    if (subagentTarget) {
+      const targetId = subagentTarget.getAttribute('data-subagent-id') || '';
+      if (targetId && targetId !== state.latestData?.session?.cascadeId) {
+        const isAutoRoot =
+          targetId === state.hostCascadeId ||
+          (!state.hostCascadeId && targetId === state.latestData?.sessions?.[0]?.cascadeId);
+        state.pinnedCascadeId = isAutoRoot ? '' : targetId;
+        state.openCheckpoints.clear();
+        state.lastTotalTokens = null;
+        state.lastOptionsSig = '';
+        refreshTelemetry(true);
+      }
+      return;
     }
     if (target.closest('#refresh-btn')) {
       refreshTelemetry(true);
@@ -353,6 +369,7 @@
     if (e.data?.type === 'conversation-change' && typeof e.data?.payload?.conversationId === 'string') {
       if (e.data.payload.conversationId !== state.hostCascadeId) {
         state.hostCascadeId = e.data.payload.conversationId;
+        if (state.latestData?.session?.isSubagent) state.pinnedCascadeId = '';
         refreshTelemetry(false, true);
       }
     }

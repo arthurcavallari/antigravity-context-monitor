@@ -284,6 +284,58 @@
 .fit-legend-item { display: inline-flex; align-items: center; gap: 4px; }
 .dot.purple { background: color-mix(in srgb, #a855f7 85%, var(--cm-text)); }
 
+.subagent-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-lg, 0.5rem);
+  background: color-mix(in srgb, var(--cm-accent) 10%, var(--cm-surface));
+  border: 1px solid color-mix(in srgb, var(--cm-accent) 30%, var(--cm-border));
+  font-size: var(--text-xs, 0.75rem);
+}
+.subagent-banner-nav { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.subagent-banner-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cm-text);
+}
+.subagent-card, .subagent-culprit.clickable {
+  cursor: pointer;
+  transition: border-color var(--dur-agy) var(--ease-agy), background-color var(--dur-agy) var(--ease-agy);
+}
+.subagent-card:hover, .subagent-culprit.clickable:hover {
+  border-color: color-mix(in srgb, var(--cm-accent) 45%, var(--cm-border));
+}
+.subagent-card.nested {
+  margin-left: 12px;
+  border-left: 2px solid color-mix(in srgb, var(--cm-accent) 45%, var(--cm-border));
+}
+.subagent-card.active-subagent {
+  border-color: color-mix(in srgb, var(--cm-accent) 60%, var(--cm-border));
+  background: color-mix(in srgb, var(--cm-accent) 8%, var(--cm-card));
+}
+.subagent-depth-badge {
+  background: color-mix(in srgb, var(--cm-accent) 16%, transparent);
+  color: var(--cm-blue);
+  font-family: var(--editor-font-family);
+  font-weight: var(--font-weight-semibold, 600);
+}
+.subagent-inspect-btn {
+  height: 18px;
+  padding: 0 6px;
+  font-size: 10px;
+  margin-left: auto;
+}
+
 @media (max-width: 340px) {
   .breakdown-row { grid-template-columns: minmax(0, 1fr) auto; }
   .breakdown-row .row-pct { display: none; }

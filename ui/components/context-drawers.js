@@ -52,6 +52,105 @@
   return `${modelProfileHtml}${helpDrawerHtml}`;
 }
 
+  function renderSubagentStatusBadge(sa = {}) {
+    const rawStatus =
+      sa.statusBadge ||
+      (sa.isRunning || sa.status === 'CASCADE_RUN_STATUS_RUNNING'
+        ? 'Running'
+        : sa.isError
+        ? 'Error'
+        : 'Done');
+    let cls = 'ready';
+    if (rawStatus === 'Running') cls = 'active';
+    else if (rawStatus === 'Error') cls = 'error';
+    else if (rawStatus === 'Stopped') cls = 'off';
+    return `<span class="status-badge ${cls}"><span class="badge-dot"></span>${esc(rawStatus)}</span>`;
+  }
+
+  function renderSubagentsDrawer(subagents = {}, subagentsExpanded = false, activeCascadeId = '') {
+    const items = Array.isArray(subagents?.items) ? subagents.items : [];
+    const totalCount = Number(subagents?.totalCount ?? items.length) || 0;
+    if (totalCount === 0 || items.length === 0) return '';
+
+    const chevronSvg = icon('chevron_right', 14);
+    const runningCount = Number(
+      subagents?.runningCount ?? items.filter((x) => x?.isRunning || x?.status === 'CASCADE_RUN_STATUS_RUNNING').length
+    );
+    const totalSteps = Number(
+      subagents?.totalSteps ?? items.reduce((sum, x) => sum + (Number(x?.stepCount) || 0), 0)
+    );
+    const parentTokensText = subagents?.formattedParentContextTokens || '';
+    const rightParts = [];
+    if (runningCount > 0) rightParts.push(`${esc(runningCount)} running`);
+    rightParts.push(`${esc(totalSteps)} step${totalSteps === 1 ? '' : 's'}`);
+    if (parentTokensText) rightParts.push(`${esc(parentTokensText)} in context`);
+
+    const runningDotHtml =
+      runningCount > 0
+        ? `<span class="dot sm" style="background:var(--cm-green-dot);opacity:1" title="${esc(runningCount)} subagent(s) running"></span>`
+        : '';
+
+    const cardsHtml = subagentsExpanded
+      ? `<div class="culprits-drawer">${items
+          .map((sa) => {
+            const depth = Math.max(1, Number(sa.nestingDepth) || 1);
+            const isNested = depth > 1;
+            const isCurrent = Boolean(activeCascadeId && sa.cascadeId === activeCascadeId);
+            const depthBadge = isNested
+              ? `<span class="fit-pill subagent-depth-badge" title="Nested worker subagent (depth ${esc(depth)})">↳ L${esc(depth)}</span>`
+              : '';
+            const roleText = String(sa.role || '').trim();
+            const typeText = String(sa.typeName || '').trim();
+            const titleText =
+              sa.title ||
+              (roleText && typeText && roleText.toLowerCase() !== typeText.toLowerCase()
+                ? `${roleText} (${typeText})`
+                : roleText || typeText || sa.cascadeId);
+            const promptText = sa.promptPreview || sa.initialPrompt || '';
+            const cardCls = [
+              'fit-card',
+              'subagent-card',
+              isNested ? 'nested' : '',
+              isCurrent ? 'active-subagent' : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
+
+            return `
+              <div class="${cardCls}" data-subagent-id="${esc(sa.cascadeId)}" title="Click to inspect subagent (${esc(sa.cascadeId)})">
+                <div class="fit-header">
+                  <div class="fit-flow" style="min-width:0;flex:1;flex-wrap:nowrap">
+                    ${depthBadge}
+                    <span class="fit-prompt" title="${esc(titleText)}">${esc(titleText)}</span>
+                  </div>
+                  ${renderSubagentStatusBadge(sa)}
+                </div>
+                <div class="fit-flow">
+                  <span class="fit-pill">${esc(sa.modelBadge || 'Gemini')}</span>
+                  <span>${esc(sa.stepCount ?? 0)} step${Number(sa.stepCount) === 1 ? '' : 's'}</span>
+                  ${sa.durationFormatted && sa.durationFormatted !== '—' ? `<span>· ${esc(sa.durationFormatted)}</span>` : ''}
+                  ${sa.formattedParentContextTokens ? `<span>· ${esc(sa.formattedParentContextTokens)} in parent</span>` : ''}
+                  ${sa.spawnStepRef ? `<span class="thinking-sub">(${esc(sa.spawnStepRef)})</span>` : ''}
+                  <button type="button" class="agy-btn subagent-inspect-btn" data-subagent-id="${esc(sa.cascadeId)}">${isCurrent ? 'Viewing' : 'Inspect'}</button>
+                </div>
+                ${promptText ? `<div class="fit-reason">"${esc(promptText)}"</div>` : ''}
+              </div>`;
+          })
+          .join('')}</div>`
+      : '';
+
+    return `
+      <div id="subagents-collapse-toggle" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect spawned L1/L2 subagents and click to view their context window">
+        <div class="row-label muted">
+          <span class="chevron ${subagentsExpanded ? 'open' : ''}">${chevronSvg}</span>
+          <span>Subagents (${esc(totalCount)})</span>
+          ${runningDotHtml}
+        </div>
+        <div class="row-tokens">${rightParts.join(' · ')}</div>
+      </div>
+      ${cardsHtml}`;
+  }
+
   function renderMcpTreeDrawer(mcp = {}, mcpExpanded = false) {
     const mcpServers = Array.isArray(mcp.servers) ? mcp.servers : [];
     if (mcpServers.length === 0) return '';
@@ -234,9 +333,13 @@
     const stepsHtml =
       topSteps.length > 0
         ? topSteps
-            .map(
-              (st) => `
-              <div class="fit-card" style="margin-bottom:5px">
+            .map((st) => {
+              const subIdAttr = st.subagentId
+                ? ` data-subagent-id="${esc(st.subagentId)}" title="Click to inspect subagent (${esc(st.subagentId)})"`
+                : '';
+              const cardCls = st.subagentId ? 'fit-card subagent-culprit clickable' : 'fit-card';
+              return `
+              <div class="${cardCls}" style="margin-bottom:5px"${subIdAttr}>
                 <div class="fit-header">
                   <div class="fit-flow" style="min-width:0;flex:1;flex-wrap:nowrap">
                     <span class="fit-pill">${esc(st.badge || 'Step')}</span>
@@ -248,8 +351,8 @@
                 <div class="thinking-track">
                   <div class="thinking-bar-response" style="width:${esc(st.barPct ?? 100)}%"></div>
                 </div>
-              </div>`
-            )
+              </div>`;
+            })
             .join('')
         : '<div class="empty-hint">No step breakdown available</div>';
 
@@ -292,5 +395,12 @@
       }`;
   }
 
-  Object.assign(window.ContextMonitor, { renderHeaderDrawers, renderMcpTreeDrawer, renderCompactionsDrawer, renderEffortFitDrawer, renderCulpritsDrawer });
+  Object.assign(window.ContextMonitor, {
+    renderHeaderDrawers,
+    renderSubagentsDrawer,
+    renderMcpTreeDrawer,
+    renderCompactionsDrawer,
+    renderEffortFitDrawer,
+    renderCulpritsDrawer,
+  });
 })();
