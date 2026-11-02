@@ -36,7 +36,7 @@
   // no id means no conversation yet ('_new'). Only a standalone browser tab has to guess.
   const isFramed = window.parent !== window;
   const state = {
-    activeTab: 'context', pinnedCascadeId: '',
+    activeTab: 'context', pinnedCascadeId: '', autoRootCascadeId: '',
     hostCascadeId: window.sidecar?.conversationId || new URLSearchParams(window.location.search).get('conversationId') || (isFramed ? '_new' : ''),
     workspaceUris: [], subagentsExpanded: false, mcpExpanded: false, compactionsExpanded: false, effortFitExpanded: false, culpritsExpanded: false,
     contextHelpOpen: false, modelProfileOpen: false, openCheckpoints: new Set(), logTailingEnabled: false,
@@ -44,6 +44,12 @@
     lastTotalTokens: null, lastCascadeId: '', lastTokenChangeAt: 0, lastHeaderHtml: '', lastTabHtml: '',
     lastDiagHeaderHtml: '', lastDiagListsHtml: '', lastOptionsSig: '', isSelectMenuOpen: false, latestData: null, diagData: null,
   };
+
+  function isPinnedToSubagent() {
+    if (!state.pinnedCascadeId) return false;
+    if (state.latestData?.session?.isSubagent) return true;
+    return Boolean(state.latestData?.subagents?.items?.some((s) => s?.cascadeId === state.pinnedCascadeId));
+  }
 
   const appRoot = document.getElementById('app');
   let telemetrySeq = 0;
@@ -161,9 +167,12 @@
     if (subagentTarget) {
       const targetId = subagentTarget.getAttribute('data-subagent-id') || '';
       if (targetId && targetId !== state.latestData?.session?.cascadeId) {
-        const isAutoRoot =
-          targetId === state.hostCascadeId ||
-          (!state.hostCascadeId && targetId === state.latestData?.sessions?.[0]?.cascadeId);
+        const autoRootId =
+          state.autoRootCascadeId ||
+          state.hostCascadeId ||
+          state.latestData?.sessions?.[0]?.cascadeId ||
+          '';
+        const isAutoRoot = Boolean(autoRootId && targetId === autoRootId);
         state.pinnedCascadeId = isAutoRoot ? '' : targetId;
         state.openCheckpoints.clear();
         state.lastTotalTokens = null;
@@ -314,6 +323,9 @@
       if (state.lastTotalTokens !== null && state.lastCascadeId === activeId && totalUsed !== state.lastTotalTokens) {
         state.lastTokenChangeAt = Date.now();
       }
+      if (!state.pinnedCascadeId && !data?.session?.isSubagent && activeId) {
+        state.autoRootCascadeId = activeId;
+      }
       state.lastCascadeId = activeId;
       state.lastTotalTokens = totalUsed;
       state.latestData = data;
@@ -360,6 +372,8 @@
     const next = Array.isArray(uris) ? uris : [];
     if (JSON.stringify(next) === JSON.stringify(state.workspaceUris)) return;
     state.workspaceUris = next;
+    state.autoRootCascadeId = '';
+    if (!state.hostCascadeId && isPinnedToSubagent()) state.pinnedCascadeId = '';
     refreshTelemetry(false, true);
   });
   window.addEventListener('message', (e) => {
@@ -369,7 +383,8 @@
     if (e.data?.type === 'conversation-change' && typeof e.data?.payload?.conversationId === 'string') {
       if (e.data.payload.conversationId !== state.hostCascadeId) {
         state.hostCascadeId = e.data.payload.conversationId;
-        if (state.latestData?.session?.isSubagent) state.pinnedCascadeId = '';
+        state.autoRootCascadeId = '';
+        if (isPinnedToSubagent()) state.pinnedCascadeId = '';
         refreshTelemetry(false, true);
       }
     }

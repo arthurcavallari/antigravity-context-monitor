@@ -324,3 +324,47 @@ test('groupIntoUserTurns and extractPromptSnippet segment subagent turns on inco
   assert.equal(advisor.latestTurnFit.promptPreview, 'Verify UI escaping now');
   assert.equal(advisor.latestTurnFit.status, 'unused_effort');
 });
+
+test('groupIntoUserTurns keeps L2 child subagent replies inside L1 coordinator turn and preserves pre-prompt invocations', () => {
+  const l1Steps = [
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Warmup' } },
+    {
+      type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+      metadata: { source: 'CORTEX_STEP_SOURCE_SYSTEM' },
+      systemMessage: {
+        message: '[Message] timestamp=2026-11-02T10:00:00Z sender=root-uuid priority=NORMAL content=Coordinate L2 workers',
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT',
+      invokeSubagent: {
+        subagents: [{ typeName: 'research', role: 'L2 Worker' }],
+        results: [{ conversationId: 'sub-l2-uuid' }],
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+      metadata: { source: 'CORTEX_STEP_SOURCE_SYSTEM' },
+      systemMessage: {
+        message: '[Message] timestamp=2026-11-02T10:01:00Z sender=sub-l2-uuid priority=NORMAL content=L2 worker completed scan',
+      },
+    },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Synthesized L2 result.' } },
+  ];
+
+  const genMeta = [
+    { stepIndices: [0] },
+    { stepIndices: [2] },
+    { stepIndices: [4] },
+  ];
+
+  const turns = groupIntoUserTurns(genMeta, l1Steps);
+  assert.equal(turns.length, 2);
+  // Pre-prompt invocation at index 0 is preserved in turn 1
+  assert.equal(turns[0].startStepIdx, 0);
+  assert.equal(turns[0].endStepIdx, 1);
+  // L1 task prompt at index 1 includes the L2 child reply at index 3 without splitting into a 3rd turn
+  assert.equal(turns[1].startStepIdx, 1);
+  assert.equal(turns[1].endStepIdx, 5);
+  assert.equal(turns[1].invocations.length, 2);
+});

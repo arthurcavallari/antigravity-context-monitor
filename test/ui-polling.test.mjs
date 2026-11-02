@@ -332,3 +332,88 @@ test('app.js drills into a subagent on [data-subagent-id] click and returns to a
   assert.equal(calls.length, 3);
   assert.equal(calls[2].body.cascadeId, '');
 });
+
+test('app.js restores Auto-sync when returning from subagent to workspace-matched root and clears subagent pin on conversation-change', async () => {
+  const timers = fakeTimers();
+  const appListeners = {};
+  const winListeners = {};
+  const calls = [];
+  const appRoot = {
+    innerHTML: '',
+    addEventListener: (type, fn) => (appListeners[type] = fn),
+  };
+  const document = {
+    hidden: false,
+    getElementById: (id) => (id === 'app' ? appRoot : null),
+    addEventListener() {},
+    documentElement: { style: { setProperty() {}, removeProperty() {} }, dataset: {} },
+  };
+  class Element {}
+  const window = {
+    location: { search: '' },
+    addEventListener: (type, fn) => (winListeners[type] = fn),
+  };
+  window.parent = window;
+  const ctx = vm.createContext({
+    window,
+    document,
+    Element,
+    URLSearchParams,
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+  });
+  for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+  window.ContextMonitor.apiCall = async (path, body) => {
+    calls.push({ path, body });
+    const activeId = body.cascadeId || body.hostCascadeId || 'ws-root-2';
+    return {
+      isExecuting: false,
+      session: {
+        cascadeId: activeId,
+        isSubagent: activeId === 'sub-ws-1',
+        parentConversationId: 'ws-root-2',
+        rootConversationId: 'ws-root-2',
+      },
+      subagents: { items: [{ cascadeId: 'sub-ws-1', parentConversationId: 'ws-root-2' }] },
+      context: { totalUsedTokens: 1000 },
+      // Note: sessions[0] is 'other-root-1', while Auto-sync resolved to 'ws-root-2' (sessions[1])
+      sessions: [
+        { cascadeId: 'other-root-1', title: 'Other Root' },
+        { cascadeId: 'ws-root-2', title: 'Workspace Root' },
+      ],
+    };
+  };
+  vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+  await timers.advance(0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.cascadeId, '');
+
+  const makeTarget = (subagentId) =>
+    Object.assign(new Element(), {
+      closest: (sel) =>
+        sel === '[data-subagent-id]'
+          ? { getAttribute: (attr) => (attr === 'data-subagent-id' ? subagentId : null) }
+          : null,
+    });
+
+  // Drill into sub-ws-1
+  await appListeners.click({ target: makeTarget('sub-ws-1') });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].body.cascadeId, 'sub-ws-1');
+
+  // Return to 'ws-root-2' via ← Parent; must restore Auto-sync (cascadeId: '') even though sessions[0] is 'other-root-1'
+  await appListeners.click({ target: makeTarget('ws-root-2') });
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2].body.cascadeId, '');
+
+  // Drill into sub-ws-1 again, then emit Hangar conversation-change; must clear subagent pin
+  await appListeners.click({ target: makeTarget('sub-ws-1') });
+  assert.equal(calls[3].body.cascadeId, 'sub-ws-1');
+  winListeners.message({
+    source: window.parent,
+    data: { type: 'conversation-change', payload: { conversationId: 'new-host-root' } },
+  });
+  await timers.advance(0);
+  assert.equal(calls[4].body.cascadeId, '');
+  assert.equal(calls[4].body.hostCascadeId, 'new-host-root');
+});

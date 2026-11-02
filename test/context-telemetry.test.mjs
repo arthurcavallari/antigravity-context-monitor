@@ -877,3 +877,276 @@ test('fetchFullTelemetry enforces zero-RPC parent polling for subagents and load
   clearConversationDetails();
   clearRpcCache();
 });
+
+test('selectActiveTrajectory and collectSubagentTree handle self-parenting roots, cyclic parent links, and orphaned L2 subagents', () => {
+  const trajectories = {
+    trajectorySummaries: {
+      'root-self': {
+        summary: 'Root with self parentConversationId',
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 5,
+        createdTime: '2026-11-02T10:00:00Z',
+        lastModifiedTime: '2026-11-02T10:05:00Z',
+        annotations: { lastUserViewTime: '2026-11-02T10:05:00Z' },
+        trajectoryMetadata: {
+          rootConversationId: 'root-self',
+          parentConversationId: 'root-self',
+        },
+      },
+      'orphan-l2': {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 4,
+        createdTime: '2026-11-02T10:01:00Z',
+        lastModifiedTime: '2026-11-02T10:02:00Z',
+        trajectoryMetadata: {
+          rootConversationId: 'root-self',
+          parentConversationId: 'evicted-l1',
+          // nestingDepth omitted by LS
+          subagentSpec: { typeName: 'research', role: 'Orphaned L2 Worker' },
+        },
+      },
+      'cycle-a': {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 2,
+        createdTime: '2026-11-02T10:03:00Z',
+        lastModifiedTime: '2026-11-02T10:04:00Z',
+        trajectoryMetadata: {
+          rootConversationId: 'root-self',
+          parentConversationId: 'cycle-b',
+          subagentSpec: { typeName: 'self', role: 'Cycle A' },
+        },
+      },
+      'cycle-b': {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 3,
+        createdTime: '2026-11-02T10:03:30Z',
+        lastModifiedTime: '2026-11-02T10:04:30Z',
+        trajectoryMetadata: {
+          parentConversationId: 'cycle-a',
+          subagentSpec: { typeName: 'self', role: 'Cycle B' },
+        },
+      },
+    },
+  };
+
+  const state = selectActiveTrajectory(trajectories, { hostCascadeId: 'root-self' });
+  assert.equal(state.activeSession.cascadeId, 'root-self');
+  assert.equal(state.activeSession.isSubagent, undefined);
+  assert.deepEqual(
+    state.sessions.map((s) => s.cascadeId),
+    ['root-self']
+  );
+
+  // Orphaned L2 whose L1 parent ('evicted-l1') is missing from summaries still infers nestingDepth = 2
+  const orphan = state.subagents.items.find((x) => x.cascadeId === 'orphan-l2');
+  assert.ok(orphan);
+  assert.equal(orphan.nestingDepth, 2);
+
+  // Cyclic nodes are visited once without infinite recursion
+  assert.equal(state.subagents.totalCount, 3);
+  const cyclePinned = selectActiveTrajectory(trajectories, { requestedCascadeId: 'cycle-b' });
+  assert.equal(cyclePinned.activeSession.isSubagent, true);
+  assert.equal(cyclePinned.activeSession.rootConversationId, 'root-self');
+});
+
+test('fetchFullTelemetry preserves cached root/L1 enrichment across >60s idle & >4 subagent LRU drill-downs without sender collision', async () => {
+  const detailCalls = [];
+  const trajectories = {
+    trajectorySummaries: {
+      'root-1': {
+        summary: 'Root Session',
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 4,
+        lastModifiedTime: '2026-11-02T12:00:00Z',
+      },
+      'sub-l1': {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 3,
+        createdTime: '2026-11-02T11:58:00Z',
+        lastModifiedTime: '2026-11-02T11:59:00Z',
+        trajectoryMetadata: {
+          parentConversationId: 'root-1',
+          rootConversationId: 'root-1',
+          nestingDepth: 1,
+          subagentSpec: { typeName: 'argon-840k', role: 'L1 Coordinator' },
+        },
+      },
+      'sub-l2': {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 2,
+        createdTime: '2026-11-02T11:58:10Z',
+        lastModifiedTime: '2026-11-02T11:58:50Z',
+        trajectoryMetadata: {
+          parentConversationId: 'sub-l1',
+          rootConversationId: 'root-1',
+          nestingDepth: 2,
+          subagentSpec: { typeName: 'research', role: 'L2 Auditor' },
+        },
+      },
+      'sub-extra-1': {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 1,
+        trajectoryMetadata: { parentConversationId: 'root-1', rootConversationId: 'root-1', nestingDepth: 1 },
+      },
+      'sub-extra-2': {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 1,
+        trajectoryMetadata: { parentConversationId: 'root-1', rootConversationId: 'root-1', nestingDepth: 1 },
+      },
+      'sub-extra-3': {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 1,
+        trajectoryMetadata: { parentConversationId: 'root-1', rootConversationId: 'root-1', nestingDepth: 1 },
+      },
+    },
+  };
+
+  const makeOptions = (nowMs) => ({
+    lsAddress: '127.0.0.1:42100',
+    csrfToken: 'tok',
+    configPath: 'C:/nonexistent/config.json',
+    nowMs,
+    fetchFn: async (url, init) => {
+      const method = url.split('/').pop();
+      const req = JSON.parse(init.body || '{}');
+      let body = {};
+      if (method === 'GetAllCascadeTrajectories') {
+        body = trajectories;
+      } else if (method === 'GetCascadeTrajectorySteps') {
+        detailCalls.push({ method, cascadeId: req.cascadeId });
+        if (req.cascadeId === 'root-1') {
+          body = {
+            steps: [
+              { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'Run audit' } },
+              {
+                type: 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT',
+                invokeSubagent: {
+                  subagents: [{ typeName: 'argon-840k', role: 'L1 Coordinator', initialPrompt: 'Coordinate L1 audit' }],
+                  results: [{ conversationId: 'sub-l1' }],
+                },
+              },
+              {
+                type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+                systemMessage: {
+                  message: '[Message] timestamp=2026-11-02T11:59:00Z sender=sub-l1 priority=NORMAL content=L1 report ready',
+                },
+              },
+            ],
+          };
+        } else if (req.cascadeId === 'sub-l1') {
+          body = {
+            steps: [
+              {
+                type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+                metadata: { source: 'CORTEX_STEP_SOURCE_SYSTEM' },
+                systemMessage: {
+                  message: '[Message] timestamp=2026-11-02T11:58:00Z sender=root-1 priority=NORMAL content=Coordinate L1 audit',
+                },
+              },
+              {
+                type: 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT',
+                invokeSubagent: {
+                  subagents: [{ typeName: 'research', role: 'L2 Auditor', initialPrompt: 'Inspect L2 target' }],
+                  results: [{ conversationId: 'sub-l2' }],
+                },
+              },
+              {
+                type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+                systemMessage: {
+                  message: '[Message] timestamp=2026-11-02T11:58:50Z sender=sub-l2 priority=NORMAL content=L2 findings',
+                },
+              },
+            ],
+          };
+        } else if (req.cascadeId === 'sub-l2') {
+          body = {
+            steps: [
+              {
+                type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+                metadata: { source: 'CORTEX_STEP_SOURCE_SYSTEM' },
+                systemMessage: {
+                  message: '[Message] timestamp=2026-11-02T11:58:10Z sender=sub-l1 priority=NORMAL content=Inspect L2 target',
+                },
+              },
+              { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'L2 findings' } },
+            ],
+          };
+        } else {
+          body = { steps: [{ type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'ok' } }] };
+        }
+      } else if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
+        detailCalls.push({ method, cascadeId: req.cascadeId });
+        const childrenByCascade = {
+          'root-1': [
+            { name: 'Step 1 (INVOKE_SUBAGENT)', numTokens: 500 },
+            { name: 'Step 2 (SYSTEM_MESSAGE)', numTokens: 3700 },
+          ],
+          'sub-l1': [
+            { name: 'Step 0 (SYSTEM_MESSAGE)', numTokens: 300 },
+            { name: 'Step 1 (INVOKE_SUBAGENT)', numTokens: 250 },
+            { name: 'Step 2 (SYSTEM_MESSAGE)', numTokens: 1250 },
+          ],
+          'sub-l2': [{ name: 'Step 0 (SYSTEM_MESSAGE)', numTokens: 600 }],
+        };
+        body = {
+          generatorMetadata: [
+            {
+              stepIndices: [1],
+              chatModel: {
+                usage: { inputTokens: '4000', cacheReadTokens: '1000', outputTokens: '100' },
+                chatStartMetadata: {
+                  contextWindowMetadata: {
+                    tokenBreakdown: {
+                      groups: [
+                        {
+                          type: 'TOKEN_TYPE_CHAT_MESSAGES',
+                          numTokens: 2000,
+                          children: childrenByCascade[req.cascadeId] || [],
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        };
+      }
+      return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+    },
+  });
+
+  clearRpcCache();
+  clearConversationDetails();
+
+  let t = 1_000_000;
+  await fetchFullTelemetry({ ...makeOptions(t), hostCascadeId: 'root-1' });
+  t += 30_000;
+  await fetchFullTelemetry({ ...makeOptions(t), hostCascadeId: 'root-1', cascadeId: 'sub-l1' });
+  // Advance past 60s from initial root-1 load while inspecting sub-l2; root-1 and sub-l1 must stay warm
+  t += 40_000;
+  const l2View = await fetchFullTelemetry({ ...makeOptions(t), hostCascadeId: 'root-1', cascadeId: 'sub-l2' });
+
+  const l1Item = l2View.subagents.items.find((x) => x.cascadeId === 'sub-l1');
+  const l2Item = l2View.subagents.items.find((x) => x.cascadeId === 'sub-l2');
+  // sub-l2's step 0 (sender=sub-l1, 600 tokens) must NOT overwrite sub-l1's replyStepIndices ([2]) or parentContextTokens (4200)
+  assert.deepEqual(l1Item.replyStepIndices, [2]);
+  assert.equal(l1Item.parentContextTokens, 4200);
+  assert.equal(l2Item.parentContextTokens, 1500);
+
+  // In sub-l2's own Largest Items in Context, step 0 (sender=sub-l1) is labeled as Parent task, not Subagent reply
+  const step0Culprit = l2View.turnInsights.culprits.topChatSteps[0];
+  assert.equal(step0Culprit.label, 'Parent task: argon-840k');
+  assert.equal(step0Culprit.badge, 'Prompt');
+  assert.equal(step0Culprit.subagentId, 'sub-l1');
+
+  // Inspecting additional subagents while drilling down touches root-1 so returning to root-1 requires 0 detail RPCs
+  await fetchFullTelemetry({ ...makeOptions((t += 5_000)), hostCascadeId: 'root-1', cascadeId: 'sub-extra-1' });
+  await fetchFullTelemetry({ ...makeOptions((t += 5_000)), hostCascadeId: 'root-1', cascadeId: 'sub-extra-2' });
+  detailCalls.length = 0;
+  await fetchFullTelemetry({ ...makeOptions((t += 5_000)), hostCascadeId: 'root-1' });
+  assert.equal(detailCalls.length, 0);
+
+  clearConversationDetails();
+  clearRpcCache();
+});
