@@ -4,8 +4,19 @@
  * Antigravity Context Monitor, backed by antigravity-sidecar-kit/setup.
  */
 
+import { cpSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { runSidecarSetup } from 'antigravity-sidecar-kit/setup';
 import { REPO_ROOT, SIDECAR_ID } from './lib/constants.mjs';
+
+function syncLocalSidecarKit() {
+  const siblingKitLib = join(REPO_ROOT, '..', 'antigravity-sidecar-kit', 'lib');
+  const localKitLib = join(REPO_ROOT, 'node_modules', 'antigravity-sidecar-kit', 'lib');
+  if (existsSync(siblingKitLib) && existsSync(join(REPO_ROOT, 'node_modules', 'antigravity-sidecar-kit'))) {
+    cpSync(siblingKitLib, localKitLib, { recursive: true });
+    console.log(`[${SIDECAR_ID}] Synced sibling antigravity-sidecar-kit/lib -> ${localKitLib}`);
+  }
+}
 
 runSidecarSetup({
   sidecarId: SIDECAR_ID,
@@ -29,6 +40,9 @@ runSidecarSetup({
     'ui/components/mcp-budgets-tab.js',
     'ui/components/diagnostics-tab.js',
   ],
+  onBeforeSetup: async () => {
+    syncLocalSidecarKit();
+  },
 }).catch((err) => {
   console.error(`[${SIDECAR_ID}] Setup failed: ${err.message}`);
   process.exit(1);

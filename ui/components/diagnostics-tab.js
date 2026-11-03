@@ -6,7 +6,9 @@
   const MAX_PAUSED_LOG_LINES = 300;
   const SAFE_ID_RE = /^[a-zA-Z0-9._-]+$/;
   const LOOPBACK_ORIGIN_RE = /^(?:https?:\/\/)(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
-  const isSafePluginId = (id) => typeof id === 'string' && SAFE_ID_RE.test(id) && !id.includes('..') && id !== '.';
+  const isSafePluginId = (id) => (
+    typeof id === 'string' && SAFE_ID_RE.test(id) && !id.includes('..') && id !== '.'
+  );
   const getLogText = (entry) => (typeof entry === 'string' ? entry : (entry?.text ?? ''));
 
   function navigateToHangarPlugin(pluginId) {
@@ -15,15 +17,29 @@
     if (parts.length > 2 || raw.includes('..')) return { ok: false, pluginId: '' };
     const candidate = parts.length === 2 ? parts[0].trim() : raw;
     const subCandidate = parts.length === 2 ? parts[1].trim() : '';
-    if (!isSafePluginId(candidate) || (parts.length === 2 && !isSafePluginId(subCandidate))) return { ok: false, pluginId: '' };
-    const payload = { type: 'hangar-navigate', targetTab: 'plugins', pluginId: candidate, ...(subCandidate ? { targetId: `${candidate}/${subCandidate}` } : {}) };
+    if (!isSafePluginId(candidate) || (parts.length === 2 && !isSafePluginId(subCandidate))) {
+      return { ok: false, pluginId: '' };
+    }
+    const payload = {
+      type: 'hangar-navigate',
+      targetTab: 'plugins',
+      pluginId: candidate,
+      ...(subCandidate ? { targetId: `${candidate}/${subCandidate}` } : {}),
+    };
     if (typeof window !== 'undefined' && window.parent && typeof window.parent.postMessage === 'function') {
       let targetOrigin = '*';
       try {
-        const refOrigin = typeof document !== 'undefined' && document.referrer ? new URL(document.referrer).origin : '';
-        if (refOrigin && LOOPBACK_ORIGIN_RE.test(refOrigin)) targetOrigin = refOrigin;
-        else if (window.parent === window && window.location?.origin && LOOPBACK_ORIGIN_RE.test(window.location.origin)) targetOrigin = window.location.origin;
-      } catch {}
+        const refOrigin = typeof document !== 'undefined' && document.referrer
+          ? new URL(document.referrer).origin
+          : '';
+        if (refOrigin && LOOPBACK_ORIGIN_RE.test(refOrigin)) {
+          targetOrigin = refOrigin;
+        } else if (window.parent === window && window.location?.origin && LOOPBACK_ORIGIN_RE.test(window.location.origin)) {
+          targetOrigin = window.location.origin;
+        }
+      } catch {
+        /* ignore */
+      }
       window.parent.postMessage(payload, targetOrigin);
     }
     return { ok: true, pluginId: candidate, payload };
@@ -53,7 +69,9 @@
       return existing.concat(incoming.slice(findLogOverlapOffset(existing, incoming)).map(norm)).slice(-maxLines);
     }
     const state = stateOrExisting;
-    if (!state || !Array.isArray(state.logBuffer) || !Array.isArray(incoming) || !incoming.length) return state?.logBuffer;
+    if (!state || !Array.isArray(state.logBuffer) || !Array.isArray(incoming) || !incoming.length) {
+      return state?.logBuffer;
+    }
     if (!state.logBuffer.length) {
       state.logBuffer = incoming.slice(-MAX_LIVE_LOG_LINES);
       return state.logBuffer;
@@ -72,7 +90,26 @@
     const tailOn = Boolean(uiState.logTailingEnabled);
     const autoScroll = Boolean(uiState.logAutoScroll);
     const hideStyle = tailOn ? '' : ' style="display:none"';
-    return html`<span class="plan-title">Task Logs <span id="diag-log-count-pill" class="agy-count-pill">${tailOn ? logsCount : 'Paused'}</span></span><div class="mcp-card-actions" style="flex-wrap:wrap"><button id="diag-clear-logs-btn" class="agy-btn agy-btn-secondary"${hideStyle}>Clear</button><button id="diag-autoscroll-toggle" type="button" role="switch" aria-checked="${autoScroll}" class="overage-toggle" title="Toggle automatic scrolling to newest log lines"${hideStyle}><span>Auto-scroll</span><agy-switch class="agy-switch sm ${autoScroll ? 'on' : ''}" size="sm" ${autoScroll ? 'checked' : ''}><span class="agy-switch-thumb"></span></agy-switch></button><button id="diag-log-toggle" type="button" role="switch" aria-checked="${tailOn}" class="overage-toggle" title="Toggle live Language Server log tailing"><span>Tail</span><agy-switch class="agy-switch sm ${tailOn ? 'on' : ''}" size="sm" ${tailOn ? 'checked' : ''}><span class="agy-switch-thumb"></span></agy-switch></button></div>`;
+    return html`
+      <span class="plan-title">
+        Task Logs <span id="diag-log-count-pill" class="agy-count-pill">${tailOn ? logsCount : 'Paused'}</span>
+      </span>
+      <div class="mcp-card-actions" style="flex-wrap:wrap">
+        <button id="diag-clear-logs-btn" class="agy-btn agy-btn-secondary"${hideStyle}>Clear</button>
+        <button id="diag-autoscroll-toggle" type="button" role="switch" aria-checked="${autoScroll}" class="overage-toggle" title="Toggle automatic scrolling to newest log lines"${hideStyle}>
+          <span>Auto-scroll</span>
+          <agy-switch class="agy-switch sm ${autoScroll ? 'on' : ''}" size="sm" ${autoScroll ? 'checked' : ''}>
+            <span class="agy-switch-thumb"></span>
+          </agy-switch>
+        </button>
+        <button id="diag-log-toggle" type="button" role="switch" aria-checked="${tailOn}" class="overage-toggle" title="Toggle live Language Server log tailing">
+          <span>Tail</span>
+          <agy-switch class="agy-switch sm ${tailOn ? 'on' : ''}" size="sm" ${tailOn ? 'checked' : ''}>
+            <span class="agy-switch-thumb"></span>
+          </agy-switch>
+        </button>
+      </div>
+    `;
   }
 
   function renderDiagnosticsLists(diagData) {
@@ -80,39 +117,134 @@
     const refreshSvg = icon('refresh', 14);
     const terminals = Array.isArray(diagData?.terminals) ? diagData.terminals : [];
     const sidecars = Array.isArray(diagData?.sidecars) ? diagData.sidecars : [];
-    const issues = Array.isArray(diagData?.warnings) ? diagData.warnings : Array.isArray(diagData?.issues) ? diagData.issues : [];
+    const issues = Array.isArray(diagData?.warnings)
+      ? diagData.warnings
+      : (Array.isArray(diagData?.issues) ? diagData.issues : []);
     const terminalsHtml = terminals.length
-      ? html`<div class="mcp-list-card">${terminals.map((t) => html`<div class="mcp-card-row"><div class="mcp-card-info"><div class="mcp-card-title"><span>${esc(t.title)}</span><span class="agy-badge off"><span class="agy-badge-dot"></span>PID ${esc(t.pid)}</span></div><div class="mcp-card-meta" title="${esc(t.workspaceUri)}">${esc(t.workspaceUri || 'No workspace')}</div></div><div class="mcp-card-actions"><button class="agy-icon-btn term-kill-btn" data-terminal-id="${esc(t.terminalId)}" title="Terminate process ${esc(t.pid)}">${closeSvg}</button></div></div>`)}</div>`
+      ? html`
+        <div class="mcp-list-card">
+          ${terminals.map((t) => html`
+            <div class="mcp-card-row">
+              <div class="mcp-card-info">
+                <div class="mcp-card-title">
+                  <span>${esc(t.title)}</span>
+                  <span class="agy-badge off"><span class="agy-badge-dot"></span>PID ${esc(t.pid)}</span>
+                </div>
+                <div class="mcp-card-meta" title="${esc(t.workspaceUri)}">${esc(t.workspaceUri || 'No workspace')}</div>
+              </div>
+              <div class="mcp-card-actions">
+                <button class="agy-icon-btn term-kill-btn" data-terminal-id="${esc(t.terminalId)}" title="Terminate process ${esc(t.pid)}">
+                  ${closeSvg}
+                </button>
+              </div>
+            </div>
+          `)}
+        </div>
+      `
       : html`<div class="empty-hint">No active background terminals</div>`;
     const issuesHtml = issues.length
-      ? html`<div class="mcp-list-card">${issues.map((item) => {
-          const text = typeof item === 'string' ? item : item?.message || item?.title || 'Diagnostic warning';
-          const pluginId = typeof item === 'object' ? (item?.pluginId || item?.pluginName || '') : '';
-          const hangarBtn = pluginId ? html`<button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(pluginId)}" title="Inspect ${esc(pluginId)} in Hangar">Inspect in Hangar</button>` : '';
-          return html`<div class="mcp-card-row"><div class="mcp-card-info"><div class="mcp-card-title"><span>${esc(text)}</span></div></div><div class="mcp-card-actions">${hangarBtn}<button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-summary="${esc(text)}" title="Send diagnostic to Agent">Fix with Agent</button></div></div>`;
-        })}</div>`
+      ? html`
+        <div class="mcp-list-card">
+          ${issues.map((item) => {
+            const text = typeof item === 'string' ? item : (item?.message || item?.title || 'Diagnostic warning');
+            const pluginId = typeof item === 'object' ? (item?.pluginId || item?.pluginName || '') : '';
+            const hangarBtn = pluginId
+              ? html`
+                <button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(pluginId)}" title="Inspect ${esc(pluginId)} in Hangar">
+                  Inspect in Hangar
+                </button>
+              `
+              : '';
+            return html`
+              <div class="mcp-card-row">
+                <div class="mcp-card-info">
+                  <div class="mcp-card-title"><span>${esc(text)}</span></div>
+                </div>
+                <div class="mcp-card-actions">
+                  ${hangarBtn}
+                  <button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-summary="${esc(text)}" title="Send diagnostic to Agent">
+                    Fix with Agent
+                  </button>
+                </div>
+              </div>
+            `;
+          })}
+        </div>
+      `
       : '';
     const sidecarsHtml = sidecars.length
-      ? html`<div class="mcp-list-card">${sidecars.map((s) => {
-          const badgeCls = s.isRunning ? 'agy-badge ready' : s.isErrored ? 'agy-badge error' : 'agy-badge off';
-          const isUnhealthy = Boolean(s.isErrored || s.lastError || s.statusBadge === 'ERRORED' || s.statusBadge === 'ERROR' || s.healthy === false);
-          const fixSummary = `Sidecar "${s.displayName || s.sidecarId}" is unhealthy (${s.statusBadge || 'ERRORED'})${s.lastError ? `: ${s.lastError}` : ''}. Please inspect and fix it.`;
-          const navTarget = s.pluginId || s.pluginName || s.sidecarId || '';
-          const hangarBtnHtml = isUnhealthy && navTarget ? html`<button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(navTarget)}" title="Inspect ${esc(s.displayName || navTarget)} in Hangar">Inspect in Hangar</button>` : '';
-          const fixBtnHtml = isUnhealthy ? html`<button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-sidecar-id="${esc(s.sidecarId)}" data-summary="${esc(fixSummary)}" title="Send diagnostic to Agent">Fix with Agent</button>` : '';
-          return html`<div class="mcp-card-row"><div class="mcp-card-info"><div class="mcp-card-title"><span>${esc(s.displayName)}</span><span class="${badgeCls}"><span class="agy-badge-dot"></span>${esc(formatBadgeLabel(s.statusBadge))}</span></div><div class="mcp-card-meta">${s.webPort ? `Port ${esc(s.webPort)}` : 'No port'}${s.lastError ? ` · ${esc(s.lastError)}` : ''}</div></div><div class="mcp-card-actions">${hangarBtnHtml}${fixBtnHtml}<button class="agy-icon-btn sidecar-restart-btn" data-sidecar-id="${esc(s.sidecarId)}" title="Restart ${esc(s.displayName)}">${refreshSvg}</button></div></div>`;
-        })}</div>`
+      ? html`
+        <div class="mcp-list-card">
+          ${sidecars.map((s) => {
+            const badgeCls = s.isRunning ? 'agy-badge ready' : (s.isErrored ? 'agy-badge error' : 'agy-badge off');
+            const isUnhealthy = Boolean(
+              s.isErrored || s.lastError || s.statusBadge === 'ERRORED' || s.statusBadge === 'ERROR' || s.healthy === false,
+            );
+            const fixSummary = `Sidecar "${s.displayName || s.sidecarId}" is unhealthy (${s.statusBadge || 'ERRORED'})${s.lastError ? `: ${s.lastError}` : ''}. Please inspect and fix it.`;
+            const navTarget = s.pluginId || s.pluginName || s.sidecarId || '';
+            const hangarBtnHtml = isUnhealthy && navTarget
+              ? html`
+                <button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(navTarget)}" title="Inspect ${esc(s.displayName || navTarget)} in Hangar">
+                  Inspect in Hangar
+                </button>
+              `
+              : '';
+            const fixBtnHtml = isUnhealthy
+              ? html`
+                <button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-sidecar-id="${esc(s.sidecarId)}" data-summary="${esc(fixSummary)}" title="Send diagnostic to Agent">
+                  Fix with Agent
+                </button>
+              `
+              : '';
+            return html`
+              <div class="mcp-card-row">
+                <div class="mcp-card-info">
+                  <div class="mcp-card-title">
+                    <span>${esc(s.displayName)}</span>
+                    <span class="${badgeCls}"><span class="agy-badge-dot"></span>${esc(formatBadgeLabel(s.statusBadge))}</span>
+                  </div>
+                  <div class="mcp-card-meta">
+                    ${s.webPort ? `Port ${esc(s.webPort)}` : 'No port'}${s.lastError ? ` · ${esc(s.lastError)}` : ''}
+                  </div>
+                </div>
+                <div class="mcp-card-actions">
+                  ${hangarBtnHtml}
+                  ${fixBtnHtml}
+                  <button class="agy-icon-btn sidecar-restart-btn" data-sidecar-id="${esc(s.sidecarId)}" title="Restart ${esc(s.displayName)}">
+                    ${refreshSvg}
+                  </button>
+                </div>
+              </div>
+            `;
+          })}
+        </div>
+      `
       : html`<div class="empty-hint">No sidecars registered</div>`;
-    return html`${issuesHtml}<div class="plan-header" style="margin:12px 0 8px"><span class="plan-title">Active Background Terminals <span class="agy-count-pill">${terminals.length}</span></span></div><div>${terminalsHtml}</div><div class="plan-header" style="margin:12px 0 8px"><span class="plan-title">Sidecar Processes <span class="agy-count-pill">${sidecars.length}</span></span></div><div>${sidecarsHtml}</div>`;
+    return html`
+      ${issuesHtml}
+      <div class="plan-header" style="margin:12px 0 8px">
+        <span class="plan-title">Active Background Terminals <span class="agy-count-pill">${terminals.length}</span></span>
+      </div>
+      <div>${terminalsHtml}</div>
+      <div class="plan-header" style="margin:12px 0 8px">
+        <span class="plan-title">Sidecar Processes <span class="agy-count-pill">${sidecars.length}</span></span>
+      </div>
+      <div>${sidecarsHtml}</div>
+    `;
   }
 
   async function handleFixWithAgent(targetOrSummary) {
     const summary = typeof targetOrSummary === 'string'
       ? targetOrSummary
-      : targetOrSummary?.getAttribute?.('data-summary') || targetOrSummary?.dataset?.summary || 'Context Monitor diagnostic warning reported.';
+      : (targetOrSummary?.getAttribute?.('data-summary') || targetOrSummary?.dataset?.summary || 'Context Monitor diagnostic warning reported.');
     try {
       if (typeof cm.notifyAgent === 'function') {
-        const res = await cm.notifyAgent({ message: summary, severity: 'warning', triggerTurn: true, title: 'Context Monitor Diagnostics' });
+        const res = await cm.notifyAgent({
+          message: summary,
+          severity: 'warning',
+          triggerTurn: true,
+          title: 'Context Monitor Diagnostics',
+        });
         if (res?.ok === false) throw new Error(res.error || 'Notification rejected');
       }
       cm.showToast?.('Sent diagnostic to Agent', 'info');
@@ -125,14 +257,29 @@
 
   function renderDiagnosticsTab(diagData, uiState = {}) {
     const logs = Array.isArray(uiState.displayLogs) ? uiState.displayLogs : [];
-    return html`<div class="sub-card"><div id="diag-log-header" class="plan-header" style="margin-bottom:6px;flex-wrap:wrap;gap:6px">${renderDiagnosticsControls(logs.length, uiState)}</div><div id="diag-log-body"></div></div><div id="diag-lists-slot">${renderDiagnosticsLists(diagData)}</div>`;
+    return html`
+      <div class="sub-card">
+        <div id="diag-log-header" class="plan-header" style="margin-bottom:6px;flex-wrap:wrap;gap:6px">
+          ${renderDiagnosticsControls(logs.length, uiState)}
+        </div>
+        <div id="diag-log-body"></div>
+      </div>
+      <div id="diag-lists-slot">${renderDiagnosticsLists(diagData)}</div>
+    `;
   }
 
   function syncDiagnosticsDom(state) {
     const tabSlot = document.getElementById('card-tab-slot');
     if (!tabSlot) return;
     if (!document.getElementById('diag-log-body')) {
-      setHtml(tabSlot, renderDiagnosticsTab(state.diagData, { logTailingEnabled: state.logTailingEnabled, logAutoScroll: state.logAutoScroll, displayLogs: state.logBuffer }));
+      setHtml(
+        tabSlot,
+        renderDiagnosticsTab(state.diagData, {
+          logTailingEnabled: state.logTailingEnabled,
+          logAutoScroll: state.logAutoScroll,
+          displayLogs: state.logBuffer,
+        }),
+      );
       state.lastDiagHeaderHtml = 'mounted';
       state.lastDiagListsHtml = '';
       state.renderedLogCount = 0;
@@ -154,7 +301,10 @@
     const bodyEl = document.getElementById('diag-log-body');
     if (bodyEl) {
       if (!tailOn) {
-        setHtml(bodyEl, html`<div class="empty-hint">Log tailing is OFF by default to conserve memory. Toggle ON above to inspect live HTTP 429 retries and Language Server traces.</div>`);
+        setHtml(
+          bodyEl,
+          html`<div class="empty-hint">Log tailing is OFF by default to conserve memory. Toggle ON above to inspect live HTTP 429 retries and Language Server traces.</div>`,
+        );
         state.renderedLogCount = 0;
       } else if (!state.logBuffer.length) {
         setHtml(bodyEl, html`<div class="empty-hint">Waiting for diagnostic log lines…</div>`);
@@ -176,13 +326,18 @@
         }
         if (logEl) {
           if (state.renderedLogCount !== state.logBuffer.length) {
-            setHtml(logEl, state.logBuffer.map((l) => html`<div class="log-line ${esc(l.level || 'info')}">${esc(l.text)}</div>`).join(''));
+            setHtml(
+              logEl,
+              state.logBuffer.map((l) => html`<div class="log-line ${esc(l.level || 'info')}">${esc(l.text)}</div>`).join(''),
+            );
             state.renderedLogCount = state.logBuffer.length;
           }
           if (state.logAutoScroll) {
             state.isProgrammaticScroll = true;
             logEl.scrollTop = logEl.scrollHeight;
-            requestAnimationFrame(() => { state.isProgrammaticScroll = false; });
+            requestAnimationFrame(() => {
+              state.isProgrammaticScroll = false;
+            });
           }
         }
       }
@@ -215,5 +370,14 @@
     });
   }
 
-  Object.assign(cm, { mergeIncomingLogs, renderDiagnosticsControls, renderDiagnosticsLists, renderDiagnosticsTab, syncDiagnosticsDom, handleFixWithAgent, navigateToHangarPlugin, wireDiagnosticsInteractiveElements: () => {} });
+  Object.assign(cm, {
+    mergeIncomingLogs,
+    renderDiagnosticsControls,
+    renderDiagnosticsLists,
+    renderDiagnosticsTab,
+    syncDiagnosticsDom,
+    handleFixWithAgent,
+    navigateToHangarPlugin,
+    wireDiagnosticsInteractiveElements: () => {},
+  });
 })();

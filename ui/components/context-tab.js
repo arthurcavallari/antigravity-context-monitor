@@ -8,12 +8,26 @@
     document.getElementById('action-msg-slot')?.remove?.();
     setHtml(
       appRoot,
-      html`<section class="context-card"><div id="card-header-slot"></div><div id="card-tab-slot" class="tab-slot"></div><div id="action-msg-slot"></div><footer class="session-bar"><select id="session-select" class="session-select" title="Sync with active chat tab or pin a session"></select><span id="telemetry-pill" class="telemetry-pill" title="Exact API turn telemetry: input_tokens + cache_read_tokens (cache hit %)"></span></footer></section>`
+      html`
+        <section class="context-card">
+          <div id="card-header-slot"></div>
+          <div id="card-tab-slot" class="tab-slot"></div>
+          <div id="action-msg-slot"></div>
+          <footer class="session-bar">
+            <select id="session-select" class="session-select" title="Sync with active chat tab or pin a session"></select>
+            <span id="telemetry-pill" class="telemetry-pill" title="Exact API turn telemetry: input_tokens + cache_read_tokens (cache hit %)"></span>
+          </footer>
+        </section>
+      `,
     );
     const sel = document.getElementById('session-select');
     if (!sel) return;
-    sel.addEventListener('mousedown', () => { state.isSelectMenuOpen = true; });
-    sel.addEventListener('blur', () => { state.isSelectMenuOpen = false; });
+    sel.addEventListener('mousedown', () => {
+      state.isSelectMenuOpen = true;
+    });
+    sel.addEventListener('blur', () => {
+      state.isSelectMenuOpen = false;
+    });
     sel.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       state.isSelectMenuOpen = false;
@@ -40,16 +54,21 @@
     const pulseActive = Boolean(isPulseActive || sessionRunning || subagentsRunning);
     const pulseTitle = !sessionRunning && subagentsRunning
       ? `Subagent executing: ${esc(subagents.activeSubagentLabel || 'subagent')}`
-      : pulseActive ? 'Agent turn executing / consuming tokens' : 'Idle';
+      : (pulseActive ? 'Agent turn executing / consuming tokens' : 'Idle');
 
-    return html`<header class="cw-header">
+    return html`
+      <header class="cw-header">
         <div class="cw-title-group">
           <span class="cw-title">Context window</span>
-          <button id="model-badge-btn" class="${badgeClass} clickable" title="Click to view model profile &amp; specs">${esc(model.badgeLabel || 'Gemini')} <span class="badge-chevron ${state.modelProfileOpen ? 'open' : ''}">▾</span></button>
+          <button id="model-badge-btn" class="${badgeClass} clickable" title="Click to view model profile &amp; specs">
+            ${esc(model.badgeLabel || 'Gemini')} <span class="badge-chevron ${state.modelProfileOpen ? 'open' : ''}">▾</span>
+          </button>
           <span class="activity-pulse ${pulseActive ? 'active' : ''}" title="${pulseTitle}"></span>
         </div>
         <div class="cw-summary-group">
-          <span class="${usageCls}" title="Cortex autocompact ceiling: ${esc(ceilingText)} · Native model window: ${esc(nativeText)}"><strong>${esc(context.formattedUsed || '0')}</strong> / ${esc(ceilingText)} (${esc(context.formattedUsedPct || '0.0%')})</span>
+          <span class="${usageCls}" title="Cortex autocompact ceiling: ${esc(ceilingText)} · Native model window: ${esc(nativeText)}">
+            <strong>${esc(context.formattedUsed || '0')}</strong> / ${esc(ceilingText)} (${esc(context.formattedUsedPct || '0.0%')})
+          </span>
           <button id="context-help-btn" class="help-pill ${state.contextHelpOpen ? 'active' : ''}" title="Why ${esc(ceilingText)} instead of ${esc(nativeText)}?">?</button>
           <button id="refresh-btn" class="agy-icon-btn ${state.isRefreshing ? 'spinning' : ''}" title="Refresh telemetry">${refreshSvg}</button>
         </div>
@@ -59,7 +78,8 @@
         <button class="agy-toggle-item ${state.activeTab === 'context' ? 'active' : ''}" data-tab="context">Context</button>
         <button class="agy-toggle-item ${state.activeTab === 'mcp' ? 'active' : ''}" data-tab="mcp">MCP &amp; Budgets</button>
         <button class="agy-toggle-item ${state.activeTab === 'diagnostics' ? 'active' : ''}" data-tab="diagnostics">Diagnostics</button>
-      </agy-toggle-group>`;
+      </agy-toggle-group>
+    `;
   }
 
   function renderSessionOptions(sessions = [], session = {}, pinnedId = '') {
@@ -95,28 +115,46 @@
       `Session: ${esc(perf.formattedSessionResponse || '0')} resp · ${esc(perf.formattedSessionThinking || '0')} think (${esc(perf.sessionThinkingRatioPct || 0)}% reasoning)${sessionEst}`,
     ].join('\n');
 
-    return html`<div class="perf-strip">
-        <div class="perf-cell" title="Time to first token on latest turn"><span class="perf-label">TTFT</span><span class="perf-val">${esc(perf.ttftFormatted || '—')}</span></div>
-        <div class="perf-cell" title="Streaming output throughput"><span class="perf-label">Speed</span><span class="perf-val">${esc(perf.tpsFormatted || '—')}</span></div>
+    return html`
+      <div class="perf-strip">
+        <div class="perf-cell" title="Time to first token on latest turn">
+          <span class="perf-label">TTFT</span>
+          <span class="perf-val">${esc(perf.ttftFormatted || '—')}</span>
+        </div>
+        <div class="perf-cell" title="Streaming output throughput">
+          <span class="perf-label">Speed</span>
+          <span class="perf-val">${esc(perf.tpsFormatted || '—')}</span>
+        </div>
         <div class="perf-cell" title="${outThinkTooltip}">
-          <span class="perf-label">Out / Think</span><span class="perf-val">${esc(perf.formattedResponse || '0')} / ${esc(perf.formattedThinking || '0')}</span>
-          <div class="thinking-track"><div class="thinking-bar-response" style="width:${respPct}%"></div><div class="thinking-bar-thinking" style="width:${thinkPct}%"></div></div>
+          <span class="perf-label">Out / Think</span>
+          <span class="perf-val">${esc(perf.formattedResponse || '0')} / ${esc(perf.formattedThinking || '0')}</span>
+          <div class="thinking-track">
+            <div class="thinking-bar-response" style="width:${respPct}%"></div>
+            <div class="thinking-bar-thinking" style="width:${thinkPct}%"></div>
+          </div>
           <span class="thinking-sub">${esc(perf.thinkingRatioPct ?? 0)}% reasoning</span>
         </div>
-        <div class="perf-cell" title="Session prompt cache hit: ${esc(perf.sessionCacheHitPct ?? 0)}% · Active step offset: ${esc(compaction.activeStartStepIndex ?? 0)}"><span class="perf-label">Compactions</span><span class="perf-val ${compaction.justCompacted ? 'warn' : ''}">${esc(compactLabel)}</span></div>
-        <div class="perf-cell" title="API 429 / transient retries (latest turn / session total)"><span class="perf-label">Retries</span><span class="perf-val ${retryWarn ? 'warn' : ''}">${esc(perf.lastTurnRetries ?? 0)} (${esc(perf.sessionRetries ?? 0)} tot)</span></div>
-      </div>`;
+        <div class="perf-cell" title="Session prompt cache hit: ${esc(perf.sessionCacheHitPct ?? 0)}% · Active step offset: ${esc(compaction.activeStartStepIndex ?? 0)}">
+          <span class="perf-label">Compactions</span>
+          <span class="perf-val ${compaction.justCompacted ? 'warn' : ''}">${esc(compactLabel)}</span>
+        </div>
+        <div class="perf-cell" title="API 429 / transient retries (latest turn / session total)">
+          <span class="perf-label">Retries</span>
+          <span class="perf-val ${retryWarn ? 'warn' : ''}">${esc(perf.lastTurnRetries ?? 0)} (${esc(perf.sessionRetries ?? 0)} tot)</span>
+        </div>
+      </div>
+    `;
   }
 
   function renderPlanUsageSection(planUsage = {}) {
     const rawGroups = Array.isArray(planUsage.groups) && planUsage.groups.length > 0
       ? planUsage.groups
       : [{
-          id: planUsage.activeGroupId || 'gemini',
-          displayName: planUsage.groupName || 'Gemini Models',
-          fiveHour: planUsage.fiveHour || { remainingPct: 100, effectivePct: 100, statusText: '100%' },
-          weekly: planUsage.weekly || { remainingPct: 100, statusText: '100%' },
-        }];
+        id: planUsage.activeGroupId || 'gemini',
+        displayName: planUsage.groupName || 'Gemini Models',
+        fiveHour: planUsage.fiveHour || { remainingPct: 100, effectivePct: 100, statusText: '100%' },
+        weekly: planUsage.weekly || { remainingPct: 100, statusText: '100%' },
+      }];
 
     const groupsGridHtml = rawGroups.map((grp) => {
       const isAct = grp.id === planUsage.activeGroupId;
@@ -125,11 +163,28 @@
       const wk = grp.weekly || {};
       const fhFill = Math.max(0, Math.min(100, fh.effectivePct ?? fh.remainingPct ?? 0));
       const wkFill = Math.max(0, Math.min(100, wk.remainingPct ?? 0));
-      return html`<div class="quota-group-card">
-          <div class="quota-row"><span class="quota-label">${esc(grp.displayName)}</span>${isAct ? html`<span class="agy-badge active"><span class="agy-badge-dot"></span>Active</span>` : ''}</div>
-          <div class="quota-item"><div class="quota-row"><span class="quota-meta">5-hour limit</span><span class="quota-meta">${esc(fh.statusText || '—')}</span></div><div class="quota-track"><div class="${fillCls}" style="width:${fhFill}%"></div></div></div>
-          <div class="quota-item"><div class="quota-row"><span class="quota-meta">Weekly limit</span><span class="quota-meta">${esc(wk.statusText || '—')}</span></div><div class="quota-track"><div class="${fillCls}" style="width:${wkFill}%"></div></div></div>
-        </div>`;
+      return html`
+        <div class="quota-group-card">
+          <div class="quota-row">
+            <span class="quota-label">${esc(grp.displayName)}</span>
+            ${isAct ? html`<span class="agy-badge active"><span class="agy-badge-dot"></span>Active</span>` : ''}
+          </div>
+          <div class="quota-item">
+            <div class="quota-row">
+              <span class="quota-meta">5-hour limit</span>
+              <span class="quota-meta">${esc(fh.statusText || '—')}</span>
+            </div>
+            <div class="quota-track"><div class="${fillCls}" style="width:${fhFill}%"></div></div>
+          </div>
+          <div class="quota-item">
+            <div class="quota-row">
+              <span class="quota-meta">Weekly limit</span>
+              <span class="quota-meta">${esc(wk.statusText || '—')}</span>
+            </div>
+            <div class="quota-track"><div class="${fillCls}" style="width:${wkFill}%"></div></div>
+          </div>
+        </div>
+      `;
     });
 
     const aiCredits = planUsage.aiCredits || {};
@@ -138,14 +193,27 @@
       ? `Session: -${esc(aiCredits.formattedSessionUsed)} (${aiCredits.lastTurnUsed ? `last turn -${esc(aiCredits.lastTurnUsed)}` : ''})`
       : 'No AI credits used in this session';
 
-    return html`<div class="plan-section">
+    return html`
+      <div class="plan-section">
         <div class="plan-header"><span class="plan-title">Plan usage</span></div>
         <div class="quota-groups-grid">${groupsGridHtml}</div>
         <div class="credits-box">
-          <div class="credits-info"><div class="credits-main"><span>Available AI Credits: ${esc(aiCredits.formattedAvailable ?? '—')}</span><span class="tier-pill">${esc(aiCredits.tierName || 'Pro')}</span></div><div class="credits-sub">${sessionBurnText}</div></div>
-          <button id="ai-overage-toggle" type="button" role="switch" aria-checked="${overageOn}" class="overage-toggle" title="Toggle Enable AI Credit Overages"><span>Overage</span><agy-switch class="agy-switch ${overageOn ? 'on' : ''}" ${overageOn ? 'checked' : ''}><span class="agy-switch-thumb"></span></agy-switch></button>
+          <div class="credits-info">
+            <div class="credits-main">
+              <span>Available AI Credits: ${esc(aiCredits.formattedAvailable ?? '—')}</span>
+              <span class="tier-pill">${esc(aiCredits.tierName || 'Pro')}</span>
+            </div>
+            <div class="credits-sub">${sessionBurnText}</div>
+          </div>
+          <button id="ai-overage-toggle" type="button" role="switch" aria-checked="${overageOn}" class="overage-toggle" title="Toggle Enable AI Credit Overages">
+            <span>Overage</span>
+            <agy-switch class="agy-switch ${overageOn ? 'on' : ''}" ${overageOn ? 'checked' : ''}>
+              <span class="agy-switch-thumb"></span>
+            </agy-switch>
+          </button>
         </div>
-      </div>`;
+      </div>
+    `;
   }
 
   function renderContextTab(data, uiState = {}) {
@@ -158,10 +226,25 @@
     const perf = turnInsights.performance || {};
     const compaction = turnInsights.compaction || { count: 0, checkpoints: [], activeStartStepIndex: 0 };
     const culprits = turnInsights.culprits || { topChatSteps: [], promptSections: [] };
-    const advisor = turnInsights.effortAdvisor || { totalTurns: 0, optimalTurns: 0, flaggedTurnsCount: 0, latestTurnFit: null, recentFlaggedTurns: [] };
+    const advisor = turnInsights.effortAdvisor || {
+      totalTurns: 0,
+      optimalTurns: 0,
+      flaggedTurnsCount: 0,
+      latestTurnFit: null,
+      recentFlaggedTurns: [],
+    };
     const barSegmentsHtml = categories
       .filter((c) => c.inActiveContext && c.tokens > 0)
-      .map((c) => html`<div class="bar-segment" style="width:${Math.max(0.35, Math.min(100, c.pct)).toFixed(2)}%;background:${esc(c.color)}" title="${esc(c.label)}: ${esc(c.formattedTokens)} (${esc(c.formattedPct)})"></div>`);
+      .map((c) => {
+        const widthPct = Math.max(0.35, Math.min(100, c.pct)).toFixed(2);
+        return html`
+          <div
+            class="bar-segment"
+            style="width:${widthPct}%;background:${esc(c.color)}"
+            title="${esc(c.label)}: ${esc(c.formattedTokens)} (${esc(c.formattedPct)})"
+          ></div>
+        `;
+      });
     const risk = context.compactionRisk || 'normal';
     const rowsHtml = categories.map((c) => {
       const isFree = c.id === 'freeSpace';
@@ -169,11 +252,16 @@
       const dotStyle = isFree ? '' : `style="background:${esc(c.color)}"`;
       const labelClass = isDeferred && !isFree ? 'row-label muted' : 'row-label';
       const riskCls = isFree && (risk === 'warn' || risk === 'danger') ? ` ${risk}` : '';
-      return html`<div class="breakdown-row" data-category="${esc(c.id)}">
-        <div class="${labelClass}"><span class="${isFree ? 'dot hollow' : 'dot'}" ${dotStyle}></span><span>${esc(c.label)}</span></div>
-        <div class="row-tokens">${esc(c.formattedTokens)}</div>
-        <div class="${isDeferred ? 'row-pct muted' : 'row-pct'}${riskCls}">${esc(c.formattedPct)}</div>
-      </div>`;
+      return html`
+        <div class="breakdown-row" data-category="${esc(c.id)}">
+          <div class="${labelClass}">
+            <span class="${isFree ? 'dot hollow' : 'dot'}" ${dotStyle}></span>
+            <span>${esc(c.label)}</span>
+          </div>
+          <div class="row-tokens">${esc(c.formattedTokens)}</div>
+          <div class="${isDeferred ? 'row-pct muted' : 'row-pct'}${riskCls}">${esc(c.formattedPct)}</div>
+        </div>
+      `;
     });
 
     return html`
@@ -189,8 +277,16 @@
       </div>
       ${renderPerfStrip(perf, compaction)}
       <div class="section-divider"></div>
-      ${renderPlanUsageSection(planUsage)}`;
+      ${renderPlanUsageSection(planUsage)}
+    `;
   }
 
-  Object.assign(cm, { ensureShellMounted, renderTopHeaderAndTabs, renderSessionOptions, renderTelemetryPillText, renderContextTab, wireContextInteractiveElements: () => {} });
+  Object.assign(cm, {
+    ensureShellMounted,
+    renderTopHeaderAndTabs,
+    renderSessionOptions,
+    renderTelemetryPillText,
+    renderContextTab,
+    wireContextInteractiveElements: () => {},
+  });
 })();

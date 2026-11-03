@@ -3,15 +3,24 @@
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
   const { esc, icon, html } = cm;
   const DRAWER_TOGGLES = {
-    '#model-badge-btn': 'modelProfileOpen', '#context-help-btn': 'contextHelpOpen',
-    '#subagents-collapse-toggle': 'subagentsExpanded', '#mcp-collapse-toggle': 'mcpExpanded',
-    '#compactions-collapse-toggle': 'compactionsExpanded', '#effort-fit-collapse-toggle': 'effortFitExpanded',
+    '#model-badge-btn': 'modelProfileOpen',
+    '#context-help-btn': 'contextHelpOpen',
+    '#subagents-collapse-toggle': 'subagentsExpanded',
+    '#mcp-collapse-toggle': 'mcpExpanded',
+    '#compactions-collapse-toggle': 'compactionsExpanded',
+    '#effort-fit-collapse-toggle': 'effortFitExpanded',
     '#culprits-collapse-toggle': 'culpritsExpanded',
   };
 
   function renderSubagentStatusBadge(sa = {}) {
-    const rawStatus = sa.statusBadge || (sa.isRunning || sa.status === 'CASCADE_RUN_STATUS_RUNNING' ? 'Running' : sa.isError ? 'Error' : 'Done');
-    const cls = rawStatus === 'Running' ? 'active' : rawStatus === 'Error' ? 'error' : rawStatus === 'Stopped' ? 'off' : 'ready';
+    const rawStatus = sa.statusBadge || (
+      sa.isRunning || sa.status === 'CASCADE_RUN_STATUS_RUNNING'
+        ? 'Running'
+        : (sa.isError ? 'Error' : 'Done')
+    );
+    const cls = rawStatus === 'Running'
+      ? 'active'
+      : (rawStatus === 'Error' ? 'error' : (rawStatus === 'Stopped' ? 'off' : 'ready'));
     return html`<span class="agy-badge ${cls}"><span class="agy-badge-dot"></span>${esc(rawStatus)}</span>`;
   }
 
@@ -24,15 +33,26 @@
     const depth = Math.max(1, Number(session.nestingDepth) || 1);
     const labelText = session.title || session.role || session.typeName || 'Subagent';
     const rootBtnHtml = depth > 1 && rootId
-      ? html`<button type="button" class="agy-btn subagent-root-btn" data-subagent-id="${esc(rootId)}" title="Return to root conversation: ${esc(rootTitle)}">Root</button>`
+      ? html`
+        <button type="button" class="agy-btn subagent-root-btn" data-subagent-id="${esc(rootId)}" title="Return to root conversation: ${esc(rootTitle)}">
+          Root
+        </button>
+      `
       : '';
-    return html`<div class="subagent-banner">
+    return html`
+      <div class="subagent-banner">
         <div class="subagent-banner-nav">
-          <button type="button" class="agy-btn subagent-back-btn" data-subagent-id="${esc(parentId)}" title="Return to parent conversation: ${esc(parentTitle)}">← Parent: ${esc(parentTitle)}</button>
+          <button type="button" class="agy-btn subagent-back-btn" data-subagent-id="${esc(parentId)}" title="Return to parent conversation: ${esc(parentTitle)}">
+            ← Parent: ${esc(parentTitle)}
+          </button>
           ${rootBtnHtml}
         </div>
-        <span class="subagent-banner-label" title="${esc(labelText)}"><span class="fit-pill">L${esc(depth)}</span><strong>${esc(labelText)}</strong></span>
-      </div>`;
+        <span class="subagent-banner-label" title="${esc(labelText)}">
+          <span class="fit-pill">L${esc(depth)}</span>
+          <strong>${esc(labelText)}</strong>
+        </span>
+      </div>
+    `;
   }
 
   function renderSubagentRow(sa = {}, activeCascadeId = '') {
@@ -44,12 +64,21 @@
       : '';
     const roleText = String(sa.role || '').trim();
     const typeText = String(sa.typeName || '').trim();
-    const titleText = sa.title || (roleText && typeText && roleText.toLowerCase() !== typeText.toLowerCase() ? `${roleText} (${typeText})` : roleText || typeText || sa.cascadeId);
+    const combinedRole = roleText && typeText && roleText.toLowerCase() !== typeText.toLowerCase()
+      ? `${roleText} (${typeText})`
+      : (roleText || typeText || sa.cascadeId);
+    const titleText = sa.title || combinedRole;
     const promptText = sa.promptPreview || sa.initialPrompt || '';
-    const cardCls = ['fit-card', 'subagent-card', isNested ? 'nested' : '', isCurrent ? 'active-subagent' : ''].filter(Boolean).join(' ');
-    return html`<div class="${cardCls}" data-subagent-id="${esc(sa.cascadeId)}" title="Click to inspect subagent (${esc(sa.cascadeId)})">
+    const cardCls = ['fit-card', 'subagent-card', isNested ? 'nested' : '', isCurrent ? 'active-subagent' : '']
+      .filter(Boolean)
+      .join(' ');
+    return html`
+      <div class="${cardCls}" data-subagent-id="${esc(sa.cascadeId)}" title="Click to inspect subagent (${esc(sa.cascadeId)})">
         <div class="fit-header">
-          <div class="fit-flow" style="min-width:0;flex:1;flex-wrap:nowrap">${depthBadge}<span class="fit-prompt" title="${esc(titleText)}">${esc(titleText)}</span></div>
+          <div class="fit-flow" style="min-width:0;flex:1;flex-wrap:nowrap">
+            ${depthBadge}
+            <span class="fit-prompt" title="${esc(titleText)}">${esc(titleText)}</span>
+          </div>
           ${renderSubagentStatusBadge(sa)}
         </div>
         <div class="fit-flow">
@@ -58,10 +87,13 @@
           ${sa.durationFormatted && sa.durationFormatted !== '—' ? html`<span>· ${esc(sa.durationFormatted)}</span>` : ''}
           ${sa.formattedParentContextTokens ? html`<span>· ${esc(sa.formattedParentContextTokens)} in parent</span>` : ''}
           ${sa.spawnStepRef ? html`<span class="thinking-sub">(${esc(sa.spawnStepRef)})</span>` : ''}
-          <button type="button" class="agy-btn subagent-inspect-btn" data-subagent-id="${esc(sa.cascadeId)}">${isCurrent ? 'Viewing' : 'Inspect'}</button>
+          <button type="button" class="agy-btn subagent-inspect-btn" data-subagent-id="${esc(sa.cascadeId)}">
+            ${isCurrent ? 'Viewing' : 'Inspect'}
+          </button>
         </div>
         ${promptText ? html`<div class="fit-reason">"${esc(promptText)}"</div>` : ''}
-      </div>`;
+      </div>
+    `;
   }
 
   function renderSubagentsDrawer(subagents = {}, subagentsExpanded = false, activeCascadeId = '') {
@@ -69,7 +101,9 @@
     const totalCount = Number(subagents?.totalCount ?? items.length) || 0;
     if (totalCount === 0 || items.length === 0) return '';
     const chevronSvg = icon('chevron_right', 14);
-    const runningCount = Number(subagents?.runningCount ?? items.filter((x) => x?.isRunning || x?.status === 'CASCADE_RUN_STATUS_RUNNING').length);
+    const runningCount = Number(
+      subagents?.runningCount ?? items.filter((x) => x?.isRunning || x?.status === 'CASCADE_RUN_STATUS_RUNNING').length,
+    );
     const totalSteps = Number(subagents?.totalSteps ?? items.reduce((sum, x) => sum + (Number(x?.stepCount) || 0), 0));
     const parentTokensText = subagents?.formattedParentContextTokens || '';
     const rightParts = [];
@@ -82,10 +116,17 @@
     const cardsHtml = subagentsExpanded
       ? html`<div class="culprits-drawer">${items.map((sa) => renderSubagentRow(sa, activeCascadeId))}</div>`
       : '';
-    return html`<div id="subagents-collapse-toggle" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect spawned L1/L2 subagents and click to view their context window">
-        <div class="row-label muted"><span class="chevron ${subagentsExpanded ? 'open' : ''}">${chevronSvg}</span><span>Subagents (${esc(totalCount)})</span>${runningDotHtml}</div>
+    return html`
+      <div id="subagents-collapse-toggle" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect spawned L1/L2 subagents and click to view their context window">
+        <div class="row-label muted">
+          <span class="chevron ${subagentsExpanded ? 'open' : ''}">${chevronSvg}</span>
+          <span>Subagents (${esc(totalCount)})</span>
+          ${runningDotHtml}
+        </div>
         <div class="row-tokens">${rightParts.join(' · ')}</div>
-      </div>${cardsHtml}`;
+      </div>
+      ${cardsHtml}
+    `;
   }
 
   function handleContextClick(target, state, resetPinTracking, refreshTelemetry, refreshDiagnostics, render) {
@@ -126,8 +167,9 @@
     const { syncDiagnosticsDom, handleFixWithAgent } = cm;
     if (target.closest('#diag-log-toggle')) {
       state.logTailingEnabled = !state.logTailingEnabled;
-      if (state.logTailingEnabled) state.logAutoScroll = true;
-      else {
+      if (state.logTailingEnabled) {
+        state.logAutoScroll = true;
+      } else {
         state.logBuffer = [];
         state.renderedLogCount = 0;
       }
@@ -181,5 +223,13 @@
     return false;
   }
 
-  Object.assign(cm, { renderSubagentStatusBadge, renderSubagentBanner, renderSubagentsBanner: renderSubagentBanner, renderSubagentRow, renderSubagentsDrawer, handleContextClick, handleDiagnosticsAction });
+  Object.assign(cm, {
+    renderSubagentStatusBadge,
+    renderSubagentBanner,
+    renderSubagentsBanner: renderSubagentBanner,
+    renderSubagentRow,
+    renderSubagentsDrawer,
+    handleContextClick,
+    handleDiagnosticsAction,
+  });
 })();

@@ -52,6 +52,32 @@ test('launch.mjs exports expected config and repo preserves TIER_1_TELEMETRY in 
   const stylesSrc = readFileSync(join(UI_DIR, 'styles.css'), 'utf8');
   assert.ok(stylesSrc.includes('--agy-ink-soft'));
   assert.ok(stylesSrc.includes('forced-colors: active'));
+
+  for (const cssRel of ['styles.css', 'components.css']) {
+    const css = readFileSync(join(UI_DIR, cssRel), 'utf8');
+    const packedCss = css.split(/\r?\n/).filter((l) => (l.match(/;/g) || []).length >= 3);
+    assert.deepEqual(packedCss, [], `ui/${cssRel} contains packed multi-property single-line rules`);
+  }
+
+  for (const jsRel of [
+    'app.js',
+    'core.js',
+    'components/context-tab.js',
+    'components/context-drawers.js',
+    'components/subagent-drawer.js',
+    'components/mcp-budgets-tab.js',
+    'components/diagnostics-tab.js',
+  ]) {
+    const src = readFileSync(join(UI_DIR, jsRel), 'utf8');
+    const commaDecls = src
+      .split(/\r?\n/)
+      .filter((l) => /^\s*(let|const)\s+[A-Za-z0-9_$]+\s*=\s*[^,;(]+,\s*[A-Za-z0-9_$]+\s*=/.test(l));
+    assert.deepEqual(commaDecls, [], `ui/${jsRel} contains comma-chained variable declarations`);
+    const multiStmt = src
+      .split(/\r?\n/)
+      .filter((l) => !l.includes('for (') && (l.match(/;/g) || []).length >= 3);
+    assert.deepEqual(multiStmt, [], `ui/${jsRel} contains packed multi-statement lines`);
+  }
 });
 
 test('StateSync mutators, /api/notify, and /mcp tools including conversation_id scoping', async () => {

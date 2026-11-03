@@ -1,29 +1,81 @@
 /** @fileoverview Main frontend controller for the Context Monitor sidecar. */
 (function () {
   const {
-    apiCall, applyTheme, esc, html, setHtml, ensureShellMounted, renderTopHeaderAndTabs, renderSessionOptions,
-    renderTelemetryPillText, renderContextTab, renderMcpBudgetsTab, handleContextClick,
-    handleMcpAction, handleDiagnosticsAction, mergeIncomingLogs, syncDiagnosticsDom,
-    nextPollDelayMs, readHostVisibility,
+    apiCall,
+    applyTheme,
+    esc,
+    html,
+    setHtml,
+    ensureShellMounted,
+    renderTopHeaderAndTabs,
+    renderSessionOptions,
+    renderTelemetryPillText,
+    renderContextTab,
+    renderMcpBudgetsTab,
+    handleContextClick,
+    handleMcpAction,
+    handleDiagnosticsAction,
+    mergeIncomingLogs,
+    syncDiagnosticsDom,
+    nextPollDelayMs,
+    readHostVisibility,
   } = window.ContextMonitor;
 
-  const PULSE_HOLD_MS = 2500, ACTION_MSG_MS = 4000, isFramed = window.parent !== window, appRoot = document.getElementById('app');
+  const PULSE_HOLD_MS = 2500;
+  const ACTION_MSG_MS = 4000;
+  const isFramed = window.parent !== window;
+  const appRoot = document.getElementById('app');
   const state = {
-    activeTab: 'context', pinnedCascadeId: '', autoRootCascadeId: '',
+    activeTab: 'context',
+    pinnedCascadeId: '',
+    autoRootCascadeId: '',
     hostCascadeId: window.sidecar?.conversationId || new URLSearchParams(window.location.search).get('conversationId') || (isFramed ? '_new' : ''),
-    workspaceUris: [], subagentsExpanded: false, mcpExpanded: false, compactionsExpanded: false,
-    effortFitExpanded: false, culpritsExpanded: false, contextHelpOpen: false, modelProfileOpen: false,
-    openCheckpoints: new Set(), logTailingEnabled: false, logAutoScroll: true, isProgrammaticScroll: false,
-    logBuffer: [], renderedLogCount: 0, isRefreshing: false, lastTotalTokens: null, lastCascadeId: '',
-    lastTokenChangeAt: 0, lastHeaderHtml: '', lastTabHtml: '', lastDiagHeaderHtml: '', lastDiagListsHtml: '',
-    lastOptionsSig: '', isSelectMenuOpen: false, latestData: null, diagData: null,
+    workspaceUris: [],
+    subagentsExpanded: false,
+    mcpExpanded: false,
+    compactionsExpanded: false,
+    effortFitExpanded: false,
+    culpritsExpanded: false,
+    contextHelpOpen: false,
+    modelProfileOpen: false,
+    openCheckpoints: new Set(),
+    logTailingEnabled: false,
+    logAutoScroll: true,
+    isProgrammaticScroll: false,
+    logBuffer: [],
+    renderedLogCount: 0,
+    isRefreshing: false,
+    lastTotalTokens: null,
+    lastCascadeId: '',
+    lastTokenChangeAt: 0,
+    lastHeaderHtml: '',
+    lastTabHtml: '',
+    lastDiagHeaderHtml: '',
+    lastDiagListsHtml: '',
+    lastOptionsSig: '',
+    isSelectMenuOpen: false,
+    latestData: null,
+    diagData: null,
   };
-  let telemetrySeq = 0, telemetryInFlight = false, pollTimer = 0, diagInFlight = null;
-  let pendingConfirm = { key: '', until: 0 }, hostVisible = true, inViewport = true, lastSeenMutationAt = 0;
+  let telemetrySeq = 0;
+  let telemetryInFlight = false;
+  let pollTimer = 0;
+  let diagInFlight = null;
+  let pendingConfirm = { key: '', until: 0 };
+  let hostVisible = true;
+  let inViewport = true;
+  let lastSeenMutationAt = 0;
   const isPaneVisible = () => hostVisible && inViewport && !document.hidden;
-  const isPinnedToSubagent = () => Boolean(state.pinnedCascadeId && (state.latestData?.session?.isSubagent || state.latestData?.subagents?.items?.some((s) => s?.cascadeId === state.pinnedCascadeId)));
+  const isPinnedToSubagent = () => Boolean(
+    state.pinnedCascadeId && (
+      state.latestData?.session?.isSubagent ||
+      state.latestData?.subagents?.items?.some((s) => s?.cascadeId === state.pinnedCascadeId)
+    ),
+  );
   const syncActiveConvId = (activeId = state.lastCascadeId) => {
-    window.ContextMonitor.activeConversationId = state.pinnedCascadeId || activeId || (state.hostCascadeId && state.hostCascadeId !== '_new' ? state.hostCascadeId : '');
+    window.ContextMonitor.activeConversationId = state.pinnedCascadeId ||
+      activeId ||
+      (state.hostCascadeId && state.hostCascadeId !== '_new' ? state.hostCascadeId : '');
   };
   syncActiveConvId('');
 
@@ -35,8 +87,9 @@
     state.lastOptionsSig = '';
   }
 
-  const computeTabBodyHtml = () =>
-    state.activeTab === 'mcp' ? renderMcpBudgetsTab(state.latestData) : renderContextTab(state.latestData, state);
+  const computeTabBodyHtml = () => (
+    state.activeTab === 'mcp' ? renderMcpBudgetsTab(state.latestData) : renderContextTab(state.latestData, state)
+  );
   const showActionMessage = (text, isError = true) => window.ContextMonitor.showToast?.(text, isError, ACTION_MSG_MS);
 
   function confirmAction(key, message) {
@@ -81,8 +134,9 @@
         state.lastHeaderHtml = nextHdr;
       }
     }
-    if (state.activeTab === 'diagnostics') syncDiagnosticsDom(state);
-    else if (tabSlot) {
+    if (state.activeTab === 'diagnostics') {
+      syncDiagnosticsDom(state);
+    } else if (tabSlot) {
       const nextBody = computeTabBodyHtml();
       if (nextBody !== state.lastTabHtml) {
         const savedScrolls = new Map();
@@ -98,7 +152,9 @@
         });
       }
     }
-    if (telemetryPill) telemetryPill.textContent = renderTelemetryPillText(state.latestData.context, state.latestData.turnInsights);
+    if (telemetryPill) {
+      telemetryPill.textContent = renderTelemetryPillText(state.latestData.context, state.latestData.turnInsights);
+    }
     if (sessionSelect && !state.isSelectMenuOpen) {
       const nextHtml = renderSessionOptions(state.latestData.sessions, state.latestData.session, state.pinnedCascadeId);
       if (nextHtml !== state.lastOptionsSig) {
@@ -118,9 +174,13 @@
           includeLogs: state.logTailingEnabled,
           cascadeId: state.pinnedCascadeId || state.lastCascadeId || state.hostCascadeId || '',
         });
-        if (state.logTailingEnabled && Array.isArray(state.diagData?.logs)) mergeIncomingLogs(state, state.diagData.logs);
+        if (state.logTailingEnabled && Array.isArray(state.diagData?.logs)) {
+          mergeIncomingLogs(state, state.diagData.logs);
+        }
         render();
-      } catch {} finally {
+      } catch {
+        /* ignore */
+      } finally {
         diagInFlight = null;
       }
     })();
@@ -136,14 +196,22 @@
       render();
     }
     try {
-      const data = await apiCall('/api/telemetry', { cascadeId: state.pinnedCascadeId, hostCascadeId: state.hostCascadeId, workspaceUris: state.workspaceUris });
+      const data = await apiCall('/api/telemetry', {
+        cascadeId: state.pinnedCascadeId,
+        hostCascadeId: state.hostCascadeId,
+        workspaceUris: state.workspaceUris,
+      });
       if (reqId !== telemetrySeq) return;
       if (data?.theme) applyTheme(data.theme);
       const activeId = data?.session?.cascadeId || '';
       const totalUsed = data?.context?.totalUsedTokens ?? 0;
       if (state.lastCascadeId && state.lastCascadeId !== activeId) state.openCheckpoints.clear();
-      if (state.lastTotalTokens !== null && state.lastCascadeId === activeId && totalUsed !== state.lastTotalTokens) state.lastTokenChangeAt = Date.now();
-      if (!state.pinnedCascadeId && !data?.session?.isSubagent && activeId) state.autoRootCascadeId = activeId;
+      if (state.lastTotalTokens !== null && state.lastCascadeId === activeId && totalUsed !== state.lastTotalTokens) {
+        state.lastTokenChangeAt = Date.now();
+      }
+      if (!state.pinnedCascadeId && !data?.session?.isSubagent && activeId) {
+        state.autoRootCascadeId = activeId;
+      }
       state.lastCascadeId = activeId;
       syncActiveConvId(activeId);
       state.lastTotalTokens = totalUsed;
@@ -153,7 +221,9 @@
     } catch (err) {
       if (reqId !== telemetrySeq) return;
       state.isRefreshing = false;
-      if (!state.latestData && appRoot) setHtml(appRoot, html`<div class="error-banner">Telemetry sync error: ${esc(err.message)}</div>`);
+      if (!state.latestData && appRoot) {
+        setHtml(appRoot, html`<div class="error-banner">Telemetry sync error: ${esc(err.message)}</div>`);
+      }
     } finally {
       if (reqId === telemetrySeq) telemetryInFlight = false;
     }
@@ -212,7 +282,10 @@
     clearTimeout(pollTimer);
     pollTimer = 0;
     if (!isPaneVisible()) return;
-    const delay = nextPollDelayMs({ isExecuting: Boolean(state.latestData?.isExecuting), activeTab: state.activeTab });
+    const delay = nextPollDelayMs({
+      isExecuting: Boolean(state.latestData?.isExecuting),
+      activeTab: state.activeTab,
+    });
     pollTimer = setTimeout(pollTick, delay);
   }
 
