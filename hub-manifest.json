@@ -14,10 +14,5 @@
     "productivity"
   ],
   "capabilityTier": "TIER_1_TELEMETRY",
-  "workspaceTriggers": {
-    "files": [
-      "*"
-    ]
-  },
   "minAntigravityVersion": "2.0.0"
 }

@@ -6,6 +6,7 @@ import {
   extractTurnPerformanceAndBudgets,
   parseInterAgentMessage,
 } from '../lib/turn-insights.mjs';
+import { extractSkillInjectionMetrics } from '../lib/context-inspector.mjs';
 import {
   analyzeModelAndEffortFit,
   extractPromptSnippet,
@@ -368,3 +369,74 @@ test('groupIntoUserTurns keeps L2 child subagent replies inside L1 coordinator t
   assert.equal(turns[1].endStepIdx, 5);
   assert.equal(turns[1].invocations.length, 2);
 });
+
+test('extractSkillInjectionMetrics parses <!-- skillInjection: {...} --> markers and estimates tokens', () => {
+  const steps = [
+    {
+      stepIndex: 4,
+      content:
+        '<!-- skillInjection: {"version":1,"hookEvent":"PreToolUse","injectedSkills":["nextjs","ai-sdk"],"droppedByCap":["geist"],"droppedByBudget":[],"totalBytes":12400} -->\n<skill_content>...</skill_content>',
+    },
+    {
+      stepIndex: 5,
+      content: '<!-- skillInjection: {malformed-json-should-never-throw} -->',
+    },
+  ];
+  const res = extractSkillInjectionMetrics(steps);
+  assert.equal(res.injections.length, 1);
+  assert.equal(res.injections[0].stepIndex, 4);
+  assert.equal(res.injections[0].hookEvent, 'PreToolUse');
+  assert.deepEqual(res.injections[0].injectedSkills, ['nextjs', 'ai-sdk']);
+  assert.deepEqual(res.injections[0].droppedByCap, ['geist']);
+  assert.deepEqual(res.injections[0].droppedByBudget, []);
+  assert.equal(res.injections[0].bytes, 12400);
+  assert.equal(res.totalInjectedBytes, 12400);
+  assert.ok(res.estimatedTokens > 3000);
+
+  const insights = extractTurnPerformanceAndBudgets([], {}, steps);
+  assert.deepEqual(insights.culprits.skillInjections, res);
+
+  // CM-AUD-06 & XREPO-03: >64KB step text with trailing marker, antigravity-skill-router alias,
+  // escaped --\u003e in JSON, and no fallback double-counting when multiple comments lack totalBytes
+  const largeStep = {
+    stepIndex: 7,
+    content:
+      'x'.repeat(70000) +
+      '\n<!-- antigravity-skill-router: {"hookEvent":"UserPromptSubmit","routedSkills":["skill-a--\\u003etest"],"bytesInjected":2500} -->',
+  };
+  const largeRes = extractSkillInjectionMetrics([largeStep]);
+  assert.equal(largeRes.injections.length, 1);
+  assert.deepEqual(largeRes.injections[0].injectedSkills, ['skill-a-->test']);
+  assert.equal(largeRes.totalInjectedBytes, 2500);
+
+  const multiFallbackStep = {
+    stepIndex: 8,
+    content:
+      '<!-- skillInjection: {"skills":["s1"]} -->\n<!-- skillInjection: {"skills":["s2"]} -->\n' +
+      'y'.repeat(1000),
+  };
+  const multiRes = extractSkillInjectionMetrics([multiFallbackStep]);
+  assert.equal(multiRes.injections.length, 2);
+  assert.equal(multiRes.totalInjectedBytes, 1000);
+
+  // CM-AUD-06: deduplicates identical candidate strings on a single step, scans userInput.items,
+  // coerces numeric string totalBytes, and includes dynamic skill injections in budgets.skills.used
+  const mirroredComment =
+    '<!-- skillInjection: {"hookEvent":"UserPromptSubmit","injectedSkills":["s-dedup"],"droppedByCap":["cap1"],"droppedByBudget":["bud1"],"totalBytes":"5000"} -->';
+  const dedupStep = {
+    stepIndex: 9,
+    content: mirroredComment,
+    additionalContext: mirroredComment,
+    userInput: {
+      items: [{ text: '<!-- skillInjection: {"hookEvent":"UserPromptSubmit","injectedSkills":["s-item"],"totalBytes":2000} -->' }],
+    },
+  };
+  const dedupRes = extractSkillInjectionMetrics([dedupStep]);
+  assert.equal(dedupRes.injections.length, 2);
+  assert.equal(dedupRes.totalInjectedBytes, 7000);
+  const dedupInsights = extractTurnPerformanceAndBudgets([], {}, [dedupStep]);
+  assert.equal(dedupInsights.budgets.skills.used, dedupRes.estimatedTokens);
+  assert.ok(dedupInsights.budgets.skills.pct > 0);
+});
+
+

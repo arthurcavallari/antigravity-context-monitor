@@ -173,7 +173,8 @@
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function formatBadgeLabel(raw) {
@@ -184,9 +185,13 @@
 
   async function apiCall(path, body = {}) {
     const fn = window.sidecar?.fetch || window.fetch.bind(window);
+    const token = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search || '').get('token') : '';
     const res = await fn(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'X-Sidecar-Token': token } : {}),
+      },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
@@ -201,15 +206,17 @@
     return apiCall('/api/mutate', body);
   }
 
-  async function notifyAgent({ message, severity = 'info', triggerTurn = true, cascadeId = '', conversationId = '', title = '' } = {}) {
-    const urlConv = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search || '').get('conversationId') : '';
+  async function notifyAgent({ message, severity = 'info', triggerTurn = true, cascadeId = '', conversationId = '', title = '', workspace = '' } = {}) {
+    const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search || '') : null;
+    const urlConv = urlParams?.get('conversationId') || '';
     const rawConv = cascadeId || conversationId || window.ContextMonitor?.activeConversationId || window.sidecar?.conversationId || urlConv || '';
-    const convId = rawConv && rawConv !== '_new' ? rawConv : undefined;
+    const resolvedWorkspace = workspace || window.sidecar?.workspace || urlParams?.get('workspace') || '';
     return apiCall('/api/notify', {
       message: String(message || ''),
       severity,
       triggerTurn: Boolean(triggerTurn),
-      ...(convId ? { conversationId: convId } : {}),
+      ...(rawConv ? { conversationId: rawConv } : {}),
+      ...(resolvedWorkspace ? { workspace: resolvedWorkspace } : {}),
       ...(title ? { title } : {}),
     });
   }
@@ -249,6 +256,32 @@
     return data.payload.visible;
   }
 
+  function createVisibilityPoller(opts = {}) {
+    if (typeof window !== 'undefined' && typeof window.AgyShell?.createVisibilityPoller === 'function') {
+      return window.AgyShell.createVisibilityPoller(opts);
+    }
+    let timer = 0;
+    const isVisible = () => (typeof opts.isVisible === 'function' ? opts.isVisible() : !document?.hidden);
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = 0;
+      if (!isVisible()) return;
+      const delay = typeof opts.getDelayMs === 'function' ? opts.getDelayMs() : POLL_IDLE_MS;
+      timer = setTimeout(tick, delay);
+    };
+    const tick = async () => {
+      timer = 0;
+      if (typeof opts.onTick === 'function') await opts.onTick();
+      schedule();
+    };
+    const sync = () => {
+      clearTimeout(timer);
+      timer = 0;
+      if (isVisible()) tick();
+    };
+    return { sync, stop: () => { clearTimeout(timer); timer = 0; }, isVisible };
+  }
+
   Object.assign(window.ContextMonitor, {
     ICONS,
     POLL_FAST_MS,
@@ -256,6 +289,7 @@
     nextPollDelayMs,
     VISIBILITY_MESSAGE_TYPE,
     readHostVisibility,
+    createVisibilityPoller,
     applyTheme,
     icon,
     iconSvg,

@@ -10,34 +10,112 @@
 
   const MAX_LIVE_LOG_LINES = 80;
   const MAX_PAUSED_LOG_LINES = 300;
+  const SAFE_ID_RE = /^[a-zA-Z0-9._-]+$/;
+  const LOOPBACK_ORIGIN_RE = /^(?:https?:\/\/)(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
 
-  function mergeIncomingLogs(state, incoming = []) {
-    if (!Array.isArray(incoming) || incoming.length === 0) return;
+  function isSafePluginId(id) {
+    return typeof id === 'string' && SAFE_ID_RE.test(id) && !id.includes('..') && id !== '.';
+  }
+
+  function navigateToHangarPlugin(pluginId) {
+    const raw = typeof pluginId === 'string' ? pluginId.trim() : '';
+    const parts = raw.split('/');
+    if (parts.length > 2 || raw.includes('..')) {
+      return { ok: false, pluginId: '' };
+    }
+    const candidate = parts.length === 2 ? parts[0].trim() : raw;
+    const subCandidate = parts.length === 2 ? parts[1].trim() : '';
+    if (!isSafePluginId(candidate) || (parts.length === 2 && !isSafePluginId(subCandidate))) {
+      return { ok: false, pluginId: '' };
+    }
+    const payload = {
+      type: 'hangar-navigate',
+      targetTab: 'plugins',
+      pluginId: candidate,
+      ...(subCandidate ? { targetId: `${candidate}/${subCandidate}` } : {}),
+    };
+    if (typeof window !== 'undefined' && window.parent && typeof window.parent.postMessage === 'function') {
+      let targetOrigin = '*';
+      try {
+        if (typeof document !== 'undefined' && document.referrer) {
+          const refOrigin = new URL(document.referrer).origin;
+          if (refOrigin && LOOPBACK_ORIGIN_RE.test(refOrigin)) targetOrigin = refOrigin;
+        } else if (window.parent === window && window.location?.origin && LOOPBACK_ORIGIN_RE.test(window.location.origin)) {
+          targetOrigin = window.location.origin;
+        }
+      } catch {}
+      window.parent.postMessage(payload, targetOrigin);
+    }
+    return { ok: true, pluginId: candidate, payload };
+  }
+
+  function getLogText(entry) {
+    return typeof entry === 'string' ? entry : (entry?.text ?? '');
+  }
+
+  function findLogOverlapOffset(existing, incoming) {
+    if (!Array.isArray(existing) || existing.length === 0 || !Array.isArray(incoming) || incoming.length === 0) {
+      return 0;
+    }
+    const maxOverlap = Math.min(existing.length, incoming.length);
+    const minSuffix = existing.length < 3 ? 1 : 2;
+    for (let k = maxOverlap; k >= minSuffix; k--) {
+      let matches = true;
+      for (let j = 0; j < k; j++) {
+        if (getLogText(incoming[j]) !== getLogText(existing[existing.length - k + j])) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) return k;
+    }
+    const anchorLen = Math.min(3, existing.length, incoming.length);
+    const anchor = existing.slice(-anchorLen).map(getLogText);
+    for (let i = incoming.length - anchorLen; i >= 0; i--) {
+      let matches = true;
+      for (let j = 0; j < anchorLen; j++) {
+        if (getLogText(incoming[i + j]) !== anchor[j]) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) return i + anchorLen;
+    }
+    return 0;
+  }
+
+  function mergeIncomingLogs(stateOrExisting, incoming = [], maxLines = MAX_PAUSED_LOG_LINES) {
+    if (Array.isArray(stateOrExisting)) {
+      const existing = stateOrExisting;
+      if (!Array.isArray(incoming) || incoming.length === 0) return existing.slice(-maxLines);
+      const isStringMode = existing.length > 0 ? typeof existing[0] === 'string' : typeof incoming[0] === 'string';
+      const normalizeItem = (item) => (isStringMode ? getLogText(item) : item);
+      if (existing.length === 0) {
+        return incoming.slice(-maxLines).map(normalizeItem);
+      }
+      const appendFrom = findLogOverlapOffset(existing, incoming);
+      const merged = existing.slice();
+      for (let i = appendFrom; i < incoming.length; i++) {
+        merged.push(normalizeItem(incoming[i]));
+      }
+      return merged.slice(-maxLines);
+    }
+
+    const state = stateOrExisting;
+    if (!state || !Array.isArray(state.logBuffer) || !Array.isArray(incoming) || incoming.length === 0) return state?.logBuffer;
     if (state.logBuffer.length === 0) {
       state.logBuffer = incoming.slice(-MAX_LIVE_LOG_LINES);
-      return;
+      return state.logBuffer;
     }
-    const lastExisting = state.logBuffer[state.logBuffer.length - 1]?.text;
-    let appendFrom = incoming.length;
-    for (let i = incoming.length - 1; i >= 0; i--) {
-      if (incoming[i]?.text === lastExisting) {
-        appendFrom = i + 1;
-        break;
-      }
-    }
-    if (appendFrom < incoming.length) {
-      for (let i = appendFrom; i < incoming.length; i++) {
-        if (state.logBuffer.length < MAX_PAUSED_LOG_LINES) state.logBuffer.push(incoming[i]);
-      }
-    } else if (incoming[incoming.length - 1]?.text !== lastExisting) {
-      for (const item of incoming) {
-        if (state.logBuffer.length < MAX_PAUSED_LOG_LINES) state.logBuffer.push(item);
-      }
+    const appendFrom = findLogOverlapOffset(state.logBuffer, incoming);
+    for (let i = appendFrom; i < incoming.length; i++) {
+      if (state.logBuffer.length < maxLines) state.logBuffer.push(incoming[i]);
     }
     if (state.logAutoScroll && state.logBuffer.length > MAX_LIVE_LOG_LINES) {
       state.logBuffer = state.logBuffer.slice(-MAX_LIVE_LOG_LINES);
       state.renderedLogCount = 0;
     }
+    return state.logBuffer;
   }
 
   function renderDiagnosticsControls(logsCount, uiState = {}) {
@@ -98,7 +176,11 @@
         ? `<div class="mcp-list-card">${issues
             .map((item) => {
               const text = typeof item === 'string' ? item : item?.message || item?.title || 'Diagnostic warning';
-              return `<div class="mcp-card-row"><div class="mcp-card-info"><div class="mcp-card-title"><span>${esc(text)}</span></div></div><div class="mcp-card-actions"><button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-summary="${esc(text)}" title="Send diagnostic to Agent">Fix with Agent</button></div></div>`;
+              const pluginId = typeof item === 'object' ? (item?.pluginId || item?.pluginName || '') : '';
+              const hangarBtn = pluginId
+                ? `<button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(pluginId)}" title="Inspect ${esc(pluginId)} in Hangar">Inspect in Hangar</button>`
+                : '';
+              return `<div class="mcp-card-row"><div class="mcp-card-info"><div class="mcp-card-title"><span>${esc(text)}</span></div></div><div class="mcp-card-actions">${hangarBtn}<button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-summary="${esc(text)}" title="Send diagnostic to Agent">Fix with Agent</button></div></div>`;
             })
             .join('')}</div>`
         : '';
@@ -116,6 +198,11 @@
               const fixSummary = `Sidecar "${s.displayName || s.sidecarId}" is unhealthy (${s.statusBadge || 'ERRORED'})${
                 s.lastError ? `: ${s.lastError}` : ''
               }. Please inspect and fix it.`;
+              const navTarget = s.pluginId || s.pluginName || s.sidecarId || '';
+              const hangarBtnHtml =
+                isUnhealthy && navTarget
+                  ? `<button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(navTarget)}" title="Inspect ${esc(s.displayName || navTarget)} in Hangar">Inspect in Hangar</button>`
+                  : '';
               const fixBtnHtml = isUnhealthy
                 ? `<button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-sidecar-id="${esc(s.sidecarId)}" data-summary="${esc(fixSummary)}" title="Send diagnostic to Agent">Fix with Agent</button>`
                 : '';
@@ -130,6 +217,7 @@
                     <div class="mcp-card-meta">${s.webPort ? `Port ${esc(s.webPort)}` : 'No port'}${s.lastError ? ` · ${esc(s.lastError)}` : ''}</div>
                   </div>
                   <div class="mcp-card-actions">
+                    ${hangarBtnHtml}
                     ${fixBtnHtml}
                     <button class="agy-icon-btn sidecar-restart-btn" data-sidecar-id="${esc(s.sidecarId)}" title="Restart ${esc(s.displayName)}">${refreshSvg}</button>
                   </div>
@@ -283,12 +371,24 @@
     document.addEventListener('click', (e) => {
       if (e?._cmFixHandled) return;
       const el = e?.target?.nodeType === 3 ? e.target.parentElement : e?.target;
+      const navBtn = el?.closest?.('[data-action="hangar-navigate"]');
+      if (navBtn) {
+        e._cmFixHandled = true;
+        navigateToHangarPlugin(navBtn.getAttribute?.('data-plugin-id') || navBtn.dataset?.pluginId || '');
+        return;
+      }
       const btn = el?.closest?.('[data-action="fix-with-agent"]');
       if (btn) { e._cmFixHandled = true; handleFixWithAgent(btn); }
     });
   }
 
   Object.assign(window.ContextMonitor, {
-    mergeIncomingLogs, renderDiagnosticsControls, renderDiagnosticsLists, renderDiagnosticsTab, syncDiagnosticsDom, handleFixWithAgent,
+    mergeIncomingLogs,
+    renderDiagnosticsControls,
+    renderDiagnosticsLists,
+    renderDiagnosticsTab,
+    syncDiagnosticsDom,
+    handleFixWithAgent,
+    navigateToHangarPlugin,
   });
 })();

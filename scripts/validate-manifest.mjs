@@ -47,7 +47,7 @@ export function validateManifest(manifest, { packageVersion } = {}) {
   if (files !== undefined) {
     // Trigger files are joined onto the user's workspace path, so they must stay relative and inside it
     const bad = Array.isArray(files)
-      ? files.filter((f) => !isNonEmptyString(f) || /^[\/]|^[a-z]:/i.test(f) || f.split(/[\/]/).includes('..'))
+      ? files.filter((f) => !isNonEmptyString(f) || f.trim() === '*' || /^[\\/]|^[a-z]:/i.test(f) || f.split(/[\\/]/).includes('..'))
       : [files];
     if (bad.length) errors.push(`workspaceTriggers.files must be relative paths inside the workspace: ${JSON.stringify(bad)}`);
   }

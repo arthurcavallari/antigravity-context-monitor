@@ -274,13 +274,22 @@
     }
   }
 
+  let diagInFlight = null;
   async function refreshDiagnostics() {
     if (state.activeTab !== 'diagnostics') return;
-    try {
-      state.diagData = await apiCall('/api/diagnostics', { includeLogs: state.logTailingEnabled });
-      if (state.logTailingEnabled && Array.isArray(state.diagData?.logs)) mergeIncomingLogs(state, state.diagData.logs);
-      render();
-    } catch { /* ignore transient polling error */ }
+    if (diagInFlight) return diagInFlight;
+    diagInFlight = (async () => {
+      try {
+        state.diagData = await apiCall('/api/diagnostics', {
+          includeLogs: state.logTailingEnabled,
+          cascadeId: state.pinnedCascadeId || state.lastCascadeId || state.hostCascadeId || '',
+        });
+        if (state.logTailingEnabled && Array.isArray(state.diagData?.logs)) mergeIncomingLogs(state, state.diagData.logs);
+        render();
+      } catch { /* ignore transient polling error */ }
+      finally { diagInFlight = null; }
+    })();
+    return diagInFlight;
   }
 
   async function refreshTelemetry(manual = false, force = false) {
@@ -420,6 +429,7 @@
       } catch { /* ignore malformed SSE payload */ }
     };
     es.addEventListener?.('state', onState);
+    es.addEventListener?.('state_changed', onState);
     es.onmessage = onState;
     es.onerror = () => {
       try { es.close?.(); } catch {}

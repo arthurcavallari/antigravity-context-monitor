@@ -37,12 +37,26 @@ if (isMain) {
     if (!port || existsSync(join(__dirname, 'node_modules', 'antigravity-sidecar-kit', 'lib', 'launcher.mjs'))) {
       console.error('[context-monitor] Launcher failed:', err?.message || err); process.exit(1);
     }
+    const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const loopbackRe = /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
     const srv = createServer((req, res) => {
       if (req.method === 'POST' && req.url?.startsWith('/__launcher/retry')) {
+        if (req.headers.origin && !loopbackRe.test(req.headers.origin)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' }).end('{"error":"Forbidden origin"}');
+          return;
+        }
+        const expectedTok = process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+        if (expectedTok) {
+          const reqTok = req.headers['x-sidecar-token'] || new URL(req.url, 'http://127.0.0.1').searchParams.get('token');
+          if (reqTok !== expectedTok) {
+            res.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"Unauthorized"}');
+            return;
+          }
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
         return void srv.close(() => process.exit(1));
       }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(`<!doctype html><html><body style="font-family:system-ui;padding:24px"><h1>Context Monitor dependencies missing</h1><p>Run <code>npm install &amp;&amp; npm run setup</code> in <code>${__dirname}</code>, then click Retry.</p><button onclick="fetch('/__launcher/retry',{method:'POST'}).then(()=>setTimeout(()=>location.reload(),800))">Retry</button></body></html>`);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(`<!doctype html><html><body style="font-family:system-ui;padding:24px"><h1>Context Monitor dependencies missing</h1><p>Run <code>npm install &amp;&amp; npm run setup</code> in <code>${escHtml(__dirname)}</code>, then click Retry.</p><button onclick="fetch('/__launcher/retry'+(location.search||''),{method:'POST'}).then(()=>setTimeout(()=>location.reload(),800))">Retry</button></body></html>`);
     }).listen(port, '127.0.0.1');
   }
 }

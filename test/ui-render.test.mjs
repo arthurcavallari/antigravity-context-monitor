@@ -29,6 +29,7 @@ const HOSTILE_ESCAPED = '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;';
 
 test('esc escapes HTML-significant characters and nullish values', () => {
   assert.equal(ui.esc('a & b < c > d "e"'), 'a &amp; b &lt; c &gt; d &quot;e&quot;');
+  assert.equal(ui.esc("single'quote"), 'single&#39;quote');
   assert.equal(ui.esc(null), '');
   assert.equal(ui.esc(undefined), '');
   assert.equal(ui.esc(42), '42');
@@ -180,6 +181,64 @@ test('mergeIncomingLogs caps, appends only new lines, and trims on auto-scroll',
   assert.equal(paused.renderedLogCount, 0);
 });
 
+test('mergeIncomingLogs preserves intermediate lines when incoming batch ends with a repeated message matching lastExisting', () => {
+  const existing = ['line-1', 'line-2', 'HTTP 429 rate limit'];
+  const incoming = [
+    { text: 'line-1' },
+    { text: 'line-2' },
+    { text: 'HTTP 429 rate limit' },
+    { text: 'important error A' },
+    { text: 'important error B' },
+    { text: 'HTTP 429 rate limit' },
+  ];
+  const state = {
+    logBuffer: existing.map((text) => ({ text, level: 'info' })),
+    logAutoScroll: false,
+    renderedLogCount: 3,
+  };
+  ui.mergeIncomingLogs(state, incoming);
+  assert.deepEqual(
+    state.logBuffer.map((l) => l.text),
+    [
+      'line-1',
+      'line-2',
+      'HTTP 429 rate limit',
+      'important error A',
+      'important error B',
+      'HTTP 429 rate limit',
+    ]
+  );
+
+  const merged = ui.mergeIncomingLogs(existing, incoming);
+  assert.deepEqual(merged, [
+    'line-1',
+    'line-2',
+    'HTTP 429 rate limit',
+    'important error A',
+    'important error B',
+    'HTTP 429 rate limit',
+  ]);
+
+  const singleExisting = ['HTTP 429 rate limit'];
+  const singleIncoming = [
+    { text: 'HTTP 429 rate limit' },
+    { text: 'important error A' },
+    { text: 'HTTP 429 rate limit' },
+  ];
+  assert.deepEqual(ui.mergeIncomingLogs(singleExisting, singleIncoming), [
+    'HTTP 429 rate limit',
+    'important error A',
+    'HTTP 429 rate limit',
+  ]);
+
+  // CM-AUD-04: 1-line coincidence at start of rotated batch does not drop incoming[0], and array mode keeps newest maxLines
+  assert.deepEqual(
+    ui.mergeIncomingLogs(['L1', 'L2', 'L3'], ['L3', 'L4', 'L5'], 80),
+    ['L1', 'L2', 'L3', 'L3', 'L4', 'L5']
+  );
+  assert.deepEqual(ui.mergeIncomingLogs(['L1', 'L2', 'L3'], ['L4', 'L5'], 4), ['L2', 'L3', 'L4', 'L5']);
+});
+
 test('renderDiagnosticsLists escapes terminal titles and sidecar errors', () => {
   const html = ui.renderDiagnosticsLists({
     terminals: [{ terminalId: 't"1', pid: 42, title: HOSTILE, workspaceUri: '/home/u/proj' }],
@@ -194,6 +253,43 @@ test('renderDiagnosticsLists escapes terminal titles and sidecar errors', () => 
   const empty = ui.renderDiagnosticsLists({});
   assert.ok(empty.includes('No active background terminals'));
   assert.ok(empty.includes('No sidecars registered'));
+
+  // CM-AUD-03 & XREPO-04: hangar-navigate buttons and skill injection telemetry rendered in MCP & Diagnostics tabs
+  const mcpWithPlugin = ui.renderMcpBudgetsTab({
+    turnInsights: {
+      topCulprits: {
+        skillInjections: {
+          totalInjectedBytes: 4200,
+          estimatedTokens: 1176,
+          injections: [{ stepIndex: 3, hookEvent: 'PreToolUse', injectedSkills: ['nextjs'], bytes: 4200 }],
+        },
+      },
+    },
+    mcpCatalog: {
+      servers: [
+        {
+          serverName: 'vercel-mcp',
+          fullServerName: 'vercel-mcp',
+          pluginName: 'vercel-plugin',
+          statusBadge: 'READY',
+          enabled: true,
+          toolCount: 4,
+          eagerCount: 0,
+          deferredCount: 4,
+          formattedTokens: '1.1k',
+        },
+      ],
+    },
+  });
+  assert.match(mcpWithPlugin, /data-action="hangar-navigate"\s+data-plugin-id="vercel-plugin"/);
+  assert.ok(mcpWithPlugin.includes('nextjs'));
+
+  const diagWithIssues = ui.renderDiagnosticsLists({
+    warnings: [{ message: 'Step #4 produced ~12000 tokens', pluginId: 'science-plugin' }],
+    sidecars: [{ sidecarId: 'broken-sc', displayName: 'Broken', statusBadge: 'ERRORED', isErrored: true }],
+  });
+  assert.match(diagWithIssues, /data-action="hangar-navigate"\s+data-plugin-id="science-plugin"/);
+  assert.match(diagWithIssues, /data-action="hangar-navigate"\s+data-plugin-id="broken-sc"/);
 });
 
 test('renderContextTab shows the server-formatted estimate and (est.) in the perf strip', () => {
@@ -358,4 +454,40 @@ test('renderContextTab renders .subagent-banner breadcrumb with Parent and Root 
   assert.ok(!optsHtml.includes(HOSTILE));
   assert.match(optsHtml, /<option value="sub-l2" selected>Subagent: Worker &lt;img/);
   assert.equal((optsHtml.match(/Pin:/g) || []).length, 1);
+
+  // CM-AUD-06: renderMcpBudgetsTab displays droppedByCap and droppedByBudget
+  const mcpInjHtml = ui.renderMcpBudgetsTab({
+    turnInsights: {
+      budgets: { skills: { formattedUsed: '2.0k', formattedLimit: '20.0k', pct: 10, formattedPct: '10.0%' } },
+      culprits: {
+        skillInjections: {
+          totalInjectedBytes: 5000,
+          estimatedTokens: 1400,
+          injections: [
+            {
+              stepIndex: 3,
+              hookEvent: 'PreToolUse',
+              injectedSkills: ['nextjs'],
+              droppedByCap: ['geist'],
+              droppedByBudget: ['ai-sdk'],
+            },
+          ],
+        },
+      },
+    },
+    mcpCatalog: { servers: [], counts: { enabledSkills: 2, enabledRules: 1 } },
+  });
+  assert.match(mcpInjHtml, /dropped:/i);
+  assert.match(mcpInjHtml, /geist/);
+  assert.match(mcpInjHtml, /ai-sdk/);
+
+  // CM-AUD-07: mergeIncomingLogs preserves new intermediate lines when a 3-line anchor repeats at the end of incoming
+  const existingLogs = ['L1', 'L2', 'A', 'B', 'C'];
+  const incomingLogs = ['A', 'B', 'C', 'NEW_ERR_429', 'A', 'B', 'C'];
+  const mergedLogs = ui.mergeIncomingLogs(existingLogs, incomingLogs, 80);
+  assert.deepEqual(Array.from(mergedLogs), ['L1', 'L2', 'A', 'B', 'C', 'NEW_ERR_429', 'A', 'B', 'C']);
+
+  // CM-AUD-08: createVisibilityPoller is exposed on window.ContextMonitor
+  assert.equal(typeof ui.createVisibilityPoller, 'function');
 });
+

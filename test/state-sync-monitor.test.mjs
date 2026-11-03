@@ -146,6 +146,13 @@ test('SSE /api/events stream broadcasts live mutations, /shell.css serves AGY to
   assert.equal(shellPage.status, 200);
   assert.match(shellPage.body, /--agy-ink-soft/);
 
+  const agyUiCss = await app.pages.get('/ui.css')();
+  assert.equal(agyUiCss.status, 200);
+  for (const mod of ['core', 'tabs', 'overlays', 'controls', 'surfaces']) {
+    assert.ok(agyUiCss.body.includes(`/* AgyUI Module: ${mod} */`), `Expected AgyUI module ${mod}`);
+  }
+  assert.equal(agyUiCss.body.includes('/* AgyUI Module: layout */'), false);
+
   const server = http.createServer((req, res) => { res.writeHead(404); res.end(); });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
@@ -246,6 +253,18 @@ test('UI preserves 88% contrast across repeated polls with AgyShell loaded, supp
   assert.equal(createdEventSources[0].closed, true);
   scheduledTimers.at(-1).fn();
   assert.equal(createdEventSources.length, 2);
+  assert.equal(typeof createdEventSources[1].listeners.state_changed, 'function');
+  createdEventSources[1].listeners.state_changed({ data: JSON.stringify({ state: { lastMutationAt: 345678, lastAction: 'mcp-toggle' } }) });
+  assert.equal(telemetryRefreshCount, beforeCount + 2);
+
+  // CM-AUD-03: /api/diagnostics forwards steps to fetchDiagnosticsSnapshot and returns TOOL_OUTPUT_BLOAT advisories
+  const diagApiRes = await app.apis.get('/api/diagnostics')({
+    includeLogs: false,
+    steps: [{ type: 'CORTEX_STEP_TYPE_VIEW_FILE', viewFile: { content: 'z'.repeat(40000) } }],
+  });
+  assert.equal(Array.isArray(diagApiRes.warnings), true);
+  assert.equal(diagApiRes.warnings.length, 1);
+  assert.equal(diagApiRes.warnings[0].code, 'TOOL_OUTPUT_BLOAT');
 
   const diagHtml = window.ContextMonitor.renderDiagnosticsLists({
     sidecars: [{ sidecarId: 'broken-sc', displayName: 'Broken Sidecar', statusBadge: 'ERRORED', isErrored: true, lastError: 'ECONNREFUSED' }],
@@ -261,3 +280,71 @@ test('UI preserves 88% contrast across repeated polls with AgyShell loaded, supp
   assert.equal(fetchCalls.at(-1).body.conversationId, 'c1');
   assert.equal(fetchCalls.at(-1).body.title, 'Context Monitor Diagnostics');
 });
+
+test('CM-AUD-01 & CM-AUD-02: action mutations and direct POST routes enforce token & origin auth, return post-mutation version, and UI forwards token/workspace/_new', async () => {
+  const prevToken = process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+  process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN = 'secret-cm-tok-99';
+  const tmpRoot = mkdtempSync(join(tmpdir(), 'cm-auth-test-'));
+  try {
+    const mockApp = { apis: new Map(), api(p, fn) { this.apis.set(p, fn); } };
+    const sync = createMonitorStateSync(mockApp, {
+      dataRoot: tmpRoot,
+      mutators: { 'mcp-refresh': async () => ({ refreshed: true }) },
+    });
+
+    const v0 = sync.globalState.currentVersion;
+    // Unauthenticated action mutation must be rejected with 401
+    const unauthRes = await sync.handleMutate({ action: 'mcp-refresh', payload: {} }, { headers: {} });
+    assert.equal(unauthRes.ok, false);
+    assert.equal(unauthRes.status, 401);
+
+    // Cross-origin action mutation must be rejected with 403
+    const badOriginRes = await sync.handleMutate(
+      { action: 'mcp-refresh', payload: {} },
+      { headers: { origin: 'https://evil.example.com', 'x-sidecar-token': 'secret-cm-tok-99' } }
+    );
+    assert.equal(badOriginRes.ok, false);
+    assert.equal(badOriginRes.status, 403);
+
+    // Authenticated action mutation succeeds and returns incremented version
+    const authRes = await sync.handleMutate(
+      { action: 'mcp-refresh', payload: {} },
+      { headers: { origin: 'http://127.0.0.1:52320', 'x-sidecar-token': 'secret-cm-tok-99' } }
+    );
+    assert.equal(authRes.ok, true);
+    assert.equal(authRes.version, v0 + 1);
+    assert.equal(authRes.version, sync.globalState.currentVersion);
+
+    // Direct POST route in app.apis must also reject unauthenticated calls when token is set
+    const directUnauth = await app.apis.get('/api/mcp/refresh')({}, { headers: {} });
+    assert.equal(directUnauth.ok, false);
+    assert.equal(directUnauth.status, 401);
+
+    // UI apiCall and notifyAgent forward X-Sidecar-Token, workspace, and preserve _new conversationId
+    const uiCalls = [];
+    const uiWin = {
+      parent: {},
+      location: { search: '?conversationId=_new&token=secret-cm-tok-99&workspace=C%3A%2Frepo' },
+      sidecar: { workspace: 'C:/repo' },
+      fetch: async (url, opts) => {
+        uiCalls.push({ url, headers: opts?.headers, body: opts?.body ? JSON.parse(opts.body) : null });
+        return { ok: true, json: async () => ({ ok: true }) };
+      },
+    };
+    const uiCtx = vm.createContext({ window: uiWin, document: { documentElement: { dataset: {}, style: {} } }, URLSearchParams });
+    vm.runInContext(readFileSync(join(UI_DIR, 'core.js'), 'utf8'), uiCtx, { filename: 'core.js' });
+
+    await uiWin.ContextMonitor.notifyAgent({ message: 'Test notify from _new', severity: 'warning' });
+    assert.equal(uiCalls.length, 1);
+    assert.equal(uiCalls[0].headers['X-Sidecar-Token'], 'secret-cm-tok-99');
+    assert.equal(uiCalls[0].body.conversationId, '_new');
+    assert.equal(uiCalls[0].body.workspace, 'C:/repo');
+
+    sync.stop();
+  } finally {
+    if (prevToken === undefined) delete process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+    else process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN = prevToken;
+    rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+

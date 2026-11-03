@@ -7,7 +7,9 @@ const read = (file) => JSON.parse(readFileSync(new URL(`../${file}`, import.meta
 
 describe('hub-manifest.json validation', () => {
   it('accepts the shipped hub-manifest.json, whose version matches package.json', () => {
-    assert.deepEqual(validateManifest(read('hub-manifest.json'), { packageVersion: read('package.json').version }), []);
+    const shipped = read('hub-manifest.json');
+    assert.deepEqual(validateManifest(shipped, { packageVersion: read('package.json').version }), []);
+    assert.equal(shipped.workspaceTriggers, undefined);
   });
 
   it('accepts the shipped sidecar.json', () => {
@@ -25,6 +27,8 @@ describe('hub-manifest.json validation', () => {
     assert.match(errorsFor({ release: { gitRepo: 'http://github.com/a/b' } }), /gitRepo must be an https URL/);
     assert.match(errorsFor({ release: { tarballUrl: 'ftp://x.test/a.tgz' } }), /tarballUrl must be an https URL/);
     assert.match(errorsFor({ workspaceTriggers: { files: ['../../.ssh/id_rsa'] } }), /relative paths inside the workspace/);
+    assert.match(errorsFor({ workspaceTriggers: { files: ['..\\..\\evil'] } }), /relative paths inside the workspace/);
+    assert.match(errorsFor({ workspaceTriggers: { files: ['*'] } }), /relative paths inside the workspace/);
     assert.match(errorsFor({ workspaceTriggers: { files: ['C:/Windows/win.ini'] } }), /relative paths inside the workspace/);
     assert.match(errorsFor({ workspaceTriggers: { files: ['/etc/passwd'] } }), /relative paths inside the workspace/);
     assert.match(errorsFor({}, { packageVersion: '9.9.9' }), /must match package\.json version/);
