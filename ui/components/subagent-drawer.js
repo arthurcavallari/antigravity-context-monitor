@@ -60,7 +60,11 @@
     const isNested = depth > 1;
     const isCurrent = Boolean(activeCascadeId && sa.cascadeId === activeCascadeId);
     const depthBadge = isNested
-      ? html`<span class="fit-pill subagent-depth-badge" title="Nested worker subagent (depth ${esc(depth)})">↳ L${esc(depth)}</span>`
+      ? html`
+        <span class="fit-pill subagent-depth-badge" title="Nested worker subagent (depth ${esc(depth)})">
+          ↳ L${esc(depth)}
+        </span>
+      `
       : '';
     const roleText = String(sa.role || '').trim();
     const typeText = String(sa.typeName || '').trim();
@@ -111,7 +115,13 @@
     rightParts.push(`${esc(totalSteps)} step${totalSteps === 1 ? '' : 's'}`);
     if (parentTokensText) rightParts.push(`${esc(parentTokensText)} in context`);
     const runningDotHtml = runningCount > 0
-      ? html`<span class="dot sm" style="background:var(--cm-green-dot);opacity:1" title="${esc(runningCount)} subagent(s) running"></span>`
+      ? html`
+        <span
+          class="dot sm"
+          style="background:var(--cm-green-dot);opacity:1"
+          title="${esc(runningCount)} subagent(s) running"
+        ></span>
+      `
       : '';
     const cardsHtml = subagentsExpanded
       ? html`<div class="culprits-drawer">${items.map((sa) => renderSubagentRow(sa, activeCascadeId))}</div>`

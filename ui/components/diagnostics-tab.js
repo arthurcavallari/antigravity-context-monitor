@@ -303,7 +303,11 @@
       if (!tailOn) {
         setHtml(
           bodyEl,
-          html`<div class="empty-hint">Log tailing is OFF by default to conserve memory. Toggle ON above to inspect live HTTP 429 retries and Language Server traces.</div>`,
+          html`
+            <div class="empty-hint">
+              Log tailing is OFF by default to conserve memory. Toggle ON above to inspect live HTTP 429 retries and Language Server traces.
+            </div>
+          `,
         );
         state.renderedLogCount = 0;
       } else if (!state.logBuffer.length) {

@@ -181,7 +181,10 @@
                 <span class="fit-pill">${esc(latTurn.shortModelLabel)}</span>
                 ${latTurn.status === 'optimal'
                   ? html`<span>✓ Matched to task</span>`
-                  : html`<span>→</span><span class="fit-pill rec ${latTurn.status === 'thrashing' ? 'upgrade' : ''}">Better fit: ${esc(latTurn.recommendedModel)}</span>`}
+                  : html`
+                    <span>→</span>
+                    <span class="fit-pill rec ${latTurn.status === 'thrashing' ? 'upgrade' : ''}">Better fit: ${esc(latTurn.recommendedModel)}</span>
+                  `}
               </div>
               <div class="fit-legend">
                 <span class="fit-legend-item">

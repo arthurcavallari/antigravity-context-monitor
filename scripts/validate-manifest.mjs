@@ -75,7 +75,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const manifestPath = resolve(process.argv[2] || join(REPO_ROOT, 'hub-manifest.json'));
   const sidecarPath = join(REPO_ROOT, 'sidecar.json');
   const { version } = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'));
-  let manifest, sidecar;
+  let manifest;
+  let sidecar;
   try {
     manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8'));

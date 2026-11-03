@@ -6,8 +6,15 @@ import { createServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __filename = realpathSync(fileURLToPath(import.meta.url)), __dirname = dirname(__filename);
-const isMain = (() => { try { return realpathSync(resolve(process.argv[1])) === __filename; } catch { return false; } })();
+const __filename = realpathSync(fileURLToPath(import.meta.url));
+const __dirname = dirname(__filename);
+const isMain = (() => {
+  try {
+    return realpathSync(resolve(process.argv[1])) === __filename;
+  } catch {
+    return false;
+  }
+})();
 
 export const LAUNCHER_CONFIG = Object.freeze({
   sidecarId: 'context-monitor',
@@ -25,7 +32,8 @@ export const LAUNCHER_CONFIG = Object.freeze({
 
 export async function startContextMonitorLauncher(overrides = {}) {
   const run = overrides.runLauncher || (await import('antigravity-sidecar-kit/launcher')).runSidecarLauncher;
-  const env = overrides.env || process.env, port = Number(overrides.port || env.ANTIGRAVITY_SIDECAR_WEB_PORT || LAUNCHER_CONFIG.port);
+  const env = overrides.env || process.env;
+  const port = Number(overrides.port || env.ANTIGRAVITY_SIDECAR_WEB_PORT || LAUNCHER_CONFIG.port);
   return run({ ...LAUNCHER_CONFIG, ...overrides, port, env: { ...env, ANTIGRAVITY_SIDECAR_WEB_PORT: String(port) } });
 }
 
@@ -35,7 +43,8 @@ if (isMain) {
   } catch (err) {
     const port = Number(process.env.ANTIGRAVITY_SIDECAR_WEB_PORT || LAUNCHER_CONFIG.port);
     if (!port || existsSync(join(__dirname, 'node_modules', 'antigravity-sidecar-kit', 'lib', 'launcher.mjs'))) {
-      console.error('[context-monitor] Launcher failed:', err?.message || err); process.exit(1);
+      console.error('[context-monitor] Launcher failed:', err?.message || err);
+      process.exit(1);
     }
     const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const loopbackRe = /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
