@@ -1,89 +1,49 @@
-/**
- * @fileoverview Main frontend controller for the Context Monitor sidecar.
- * Manages 3 tabs (Context, MCP & Budgets, Diagnostics), persistent dropdown,
- * decoupled header/body slots, root event delegation, and zero-jitter log tailing.
- */
-
+/** @fileoverview Main frontend controller for the Context Monitor sidecar. */
 (function () {
   const {
-    apiCall, applyTheme, esc, renderTopHeaderAndTabs, renderSessionOptions, renderTelemetryPillText,
-    renderContextTab, renderMcpBudgetsTab, mergeIncomingLogs, syncDiagnosticsDom, nextPollDelayMs, readHostVisibility,
+    apiCall, applyTheme, esc, html, setHtml, ensureShellMounted, renderTopHeaderAndTabs, renderSessionOptions,
+    renderTelemetryPillText, renderContextTab, renderMcpBudgetsTab, handleContextClick,
+    handleMcpAction, handleDiagnosticsAction, mergeIncomingLogs, syncDiagnosticsDom,
+    nextPollDelayMs, readHostVisibility,
   } = window.ContextMonitor;
 
-  const PULSE_HOLD_MS = 2500, ACTION_MSG_MS = 4000;
-  const DRAWER_TOGGLES = {
-    '#model-badge-btn': 'modelProfileOpen', '#context-help-btn': 'contextHelpOpen',
-    '#subagents-collapse-toggle': 'subagentsExpanded', '#mcp-collapse-toggle': 'mcpExpanded',
-    '#compactions-collapse-toggle': 'compactionsExpanded', '#effort-fit-collapse-toggle': 'effortFitExpanded',
-    '#culprits-collapse-toggle': 'culpritsExpanded',
-  };
-
-  // Antigravity opens frames without a conversationId on its new-conversation screen, so inside a host
-  // no id means no conversation yet ('_new'). Only a standalone browser tab has to guess.
-  const isFramed = window.parent !== window;
+  const PULSE_HOLD_MS = 2500, ACTION_MSG_MS = 4000, isFramed = window.parent !== window, appRoot = document.getElementById('app');
   const state = {
     activeTab: 'context', pinnedCascadeId: '', autoRootCascadeId: '',
     hostCascadeId: window.sidecar?.conversationId || new URLSearchParams(window.location.search).get('conversationId') || (isFramed ? '_new' : ''),
-    workspaceUris: [], subagentsExpanded: false, mcpExpanded: false, compactionsExpanded: false, effortFitExpanded: false, culpritsExpanded: false,
-    contextHelpOpen: false, modelProfileOpen: false, openCheckpoints: new Set(), logTailingEnabled: false,
-    logAutoScroll: true, isProgrammaticScroll: false, logBuffer: [], renderedLogCount: 0, isRefreshing: false,
-    lastTotalTokens: null, lastCascadeId: '', lastTokenChangeAt: 0, lastHeaderHtml: '', lastTabHtml: '',
-    lastDiagHeaderHtml: '', lastDiagListsHtml: '', lastOptionsSig: '', isSelectMenuOpen: false, latestData: null, diagData: null,
+    workspaceUris: [], subagentsExpanded: false, mcpExpanded: false, compactionsExpanded: false,
+    effortFitExpanded: false, culpritsExpanded: false, contextHelpOpen: false, modelProfileOpen: false,
+    openCheckpoints: new Set(), logTailingEnabled: false, logAutoScroll: true, isProgrammaticScroll: false,
+    logBuffer: [], renderedLogCount: 0, isRefreshing: false, lastTotalTokens: null, lastCascadeId: '',
+    lastTokenChangeAt: 0, lastHeaderHtml: '', lastTabHtml: '', lastDiagHeaderHtml: '', lastDiagListsHtml: '',
+    lastOptionsSig: '', isSelectMenuOpen: false, latestData: null, diagData: null,
   };
-
-  function isPinnedToSubagent() {
-    if (!state.pinnedCascadeId) return false;
-    if (state.latestData?.session?.isSubagent) return true;
-    return Boolean(state.latestData?.subagents?.items?.some((s) => s?.cascadeId === state.pinnedCascadeId));
-  }
-
-  const appRoot = document.getElementById('app');
-  let telemetrySeq = 0, telemetryInFlight = false, pollTimer = 0, pendingConfirm = { key: '', until: 0 };
+  let telemetrySeq = 0, telemetryInFlight = false, pollTimer = 0, diagInFlight = null;
+  let pendingConfirm = { key: '', until: 0 }, hostVisible = true, inViewport = true, lastSeenMutationAt = 0;
+  const isPaneVisible = () => hostVisible && inViewport && !document.hidden;
+  const isPinnedToSubagent = () => Boolean(state.pinnedCascadeId && (state.latestData?.session?.isSubagent || state.latestData?.subagents?.items?.some((s) => s?.cascadeId === state.pinnedCascadeId)));
   const syncActiveConvId = (activeId = state.lastCascadeId) => {
     window.ContextMonitor.activeConversationId = state.pinnedCascadeId || activeId || (state.hostCascadeId && state.hostCascadeId !== '_new' ? state.hostCascadeId : '');
   };
   syncActiveConvId('');
 
-  function ensureShellMounted() {
-    if (!appRoot || document.getElementById('card-tab-slot')) return;
-    document.getElementById('action-msg-slot')?.remove?.();
-    appRoot.innerHTML = `<section class="context-card">
-        <div id="card-header-slot"></div>
-        <div id="card-tab-slot" class="tab-slot"></div>
-        <div id="action-msg-slot"></div>
-        <footer class="session-bar">
-          <select id="session-select" class="session-select" title="Sync with active chat tab or pin a session"></select>
-          <span id="telemetry-pill" class="telemetry-pill" title="Exact API turn telemetry: input_tokens + cache_read_tokens (cache hit %)"></span>
-        </footer>
-      </section>`;
-    const sel = document.getElementById('session-select');
-    if (!sel) return;
-    sel.addEventListener('mousedown', () => { state.isSelectMenuOpen = true; });
-    sel.addEventListener('blur', () => { state.isSelectMenuOpen = false; });
-    sel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { state.isSelectMenuOpen = false; sel.blur(); } });
-    sel.addEventListener('change', (e) => {
-      state.isSelectMenuOpen = false; state.pinnedCascadeId = e.target.value || ''; syncActiveConvId();
-      state.openCheckpoints.clear(); state.lastTotalTokens = null; state.lastOptionsSig = '';
-      sel.blur(); refreshTelemetry(true);
-    });
+  function resetPinTracking(nextPin) {
+    state.pinnedCascadeId = nextPin;
+    syncActiveConvId();
+    state.openCheckpoints.clear();
+    state.lastTotalTokens = null;
+    state.lastOptionsSig = '';
   }
 
-  function computeTabBodyHtml() {
-    if (state.activeTab === 'mcp') return renderMcpBudgetsTab(state.latestData);
-    return renderContextTab(state.latestData, {
-      subagentsExpanded: state.subagentsExpanded, mcpExpanded: state.mcpExpanded, compactionsExpanded: state.compactionsExpanded,
-      effortFitExpanded: state.effortFitExpanded, culpritsExpanded: state.culpritsExpanded, openCheckpoints: state.openCheckpoints,
-    });
-  }
+  const computeTabBodyHtml = () =>
+    state.activeTab === 'mcp' ? renderMcpBudgetsTab(state.latestData) : renderContextTab(state.latestData, state);
+  const showActionMessage = (text, isError = true) => window.ContextMonitor.showToast?.(text, isError, ACTION_MSG_MS);
 
-  function showActionMessage(text, isError = true) {
-    window.ContextMonitor.showToast?.(text, isError, ACTION_MSG_MS);
-  }
-
-  // Click-again confirmation: native confirm() is unthemed, blocks the pane, and may be sandboxed away
   function confirmAction(key, message) {
     if (pendingConfirm.key === key && Date.now() < pendingConfirm.until) {
-      pendingConfirm = { key: '', until: 0 }; showActionMessage('', false); return true;
+      pendingConfirm = { key: '', until: 0 };
+      showActionMessage('', false);
+      return true;
     }
     pendingConfirm = { key, until: Date.now() + ACTION_MSG_MS };
     showActionMessage(`${message} Click again to confirm.`, false);
@@ -91,151 +51,24 @@
   }
 
   async function runAction(failureText, path, body) {
-    try { await apiCall(path, body); } catch (err) { showActionMessage(`${failureText}: ${err.message}`); }
-  }
-
-  async function handleMcpToggle(btn) {
-    const serverName = btn.getAttribute('data-server');
-    const next = btn.getAttribute('data-enabled') !== '1';
-    if (!serverName) return;
-    const srv = (state.latestData?.mcpCatalog?.servers || []).find((s) => s.fullServerName === serverName || s.serverName === serverName);
-    if (srv) {
-      srv.enabled = next;
-      srv.statusBadge = next ? 'READY' : 'OFF';
-      srv.isError = false;
-      btn.setAttribute('data-enabled', next ? '1' : '0');
-      btn.setAttribute('aria-checked', String(next));
-      btn.querySelector('.agy-switch')?.classList.toggle('on', next);
-      const row = btn.closest('.mcp-card-row');
-      row?.classList.toggle('disabled', !next);
-      row?.querySelector('.mcp-server-name')?.classList.toggle('strike', !next);
-      const badge = row?.querySelector('.agy-badge');
-      if (badge) {
-        badge.className = `agy-badge ${next ? 'ready' : 'off'}`;
-        badge.innerHTML = `<span class="agy-badge-dot"></span>${next ? 'Ready' : 'Off'}`;
-      }
-      state.lastTabHtml = computeTabBodyHtml();
+    try {
+      await apiCall(path, body);
+    } catch (err) {
+      showActionMessage(`${failureText}: ${err.message}`);
     }
-    await runAction(`Could not ${next ? 'enable' : 'disable'} ${serverName}`, '/api/mcp/toggle', { serverName, enabled: next });
-    await refreshTelemetry(false);
   }
 
   async function handleAppClick(e) {
     const target = e?.target?.nodeType === 3 ? e.target.parentElement : e?.target;
     if (!target || typeof target.closest !== 'function') return;
-    const tabBtn = target.closest('.agy-toggle-item');
-    if (tabBtn) {
-      state.activeTab = tabBtn.getAttribute('data-tab') || 'context';
-      state.lastTabHtml = '';
-      if (state.activeTab === 'diagnostics') refreshDiagnostics();
-      render();
-      return;
-    }
-    for (const [selector, stateKey] of Object.entries(DRAWER_TOGGLES)) {
-      if (target.closest(selector)) { state[stateKey] = !state[stateKey]; render(); return; }
-    }
-    const subagentTarget = target.closest('[data-subagent-id]');
-    if (subagentTarget) {
-      const targetId = subagentTarget.getAttribute('data-subagent-id') || '';
-      if (targetId && targetId !== state.latestData?.session?.cascadeId) {
-        const autoRootId =
-          state.autoRootCascadeId ||
-          state.hostCascadeId ||
-          state.latestData?.sessions?.[0]?.cascadeId ||
-          '';
-        const isAutoRoot = Boolean(autoRootId && targetId === autoRootId);
-        state.pinnedCascadeId = isAutoRoot ? '' : targetId;
-        syncActiveConvId();
-        state.openCheckpoints.clear();
-        state.lastTotalTokens = null;
-        state.lastOptionsSig = '';
-        refreshTelemetry(true);
-      }
-      return;
-    }
-    if (target.closest('#refresh-btn')) {
-      refreshTelemetry(true);
-      if (state.activeTab === 'diagnostics') refreshDiagnostics();
-      return;
-    }
-    const overageBtn = target.closest('#ai-overage-toggle');
-    if (overageBtn && state.latestData?.planUsage?.aiCredits) {
-      const next = !state.latestData.planUsage.aiCredits.useAiCredits;
-      state.latestData.planUsage.aiCredits.useAiCredits = next;
-      overageBtn.setAttribute('aria-checked', String(next));
-      overageBtn.querySelector('.agy-switch')?.classList.toggle('on', next);
-      state.lastTabHtml = computeTabBodyHtml();
-      try {
-        await apiCall('/api/ai-credits/toggle', { enabled: next });
-        await refreshTelemetry(false);
-      } catch {
-        state.latestData.planUsage.aiCredits.useAiCredits = !next;
-        render();
-      }
-      return;
-    }
-    if (target.closest('#mcp-refresh-all-btn')) {
-      await runAction('Could not refresh MCP servers', '/api/mcp/refresh', {});
-      await refreshTelemetry(true);
-      return;
-    }
-    const mcpRefreshBtn = target.closest('.mcp-refresh-btn');
-    if (mcpRefreshBtn) {
-      const serverName = mcpRefreshBtn.getAttribute('data-server');
-      if (serverName) { await runAction(`Could not refresh ${serverName}`, '/api/mcp/refresh', { serverName }); await refreshTelemetry(true); }
-      return;
-    }
-    const mcpToggleBtn = target.closest('.mcp-toggle-btn');
-    if (mcpToggleBtn) { await handleMcpToggle(mcpToggleBtn); return; }
-    if (target.closest('#diag-log-toggle')) {
-      state.logTailingEnabled = !state.logTailingEnabled;
-      if (state.logTailingEnabled) state.logAutoScroll = true;
-      else { state.logBuffer = []; state.renderedLogCount = 0; }
-      refreshDiagnostics();
-      syncDiagnosticsDom(state);
-      return;
-    }
-    if (target.closest('#diag-autoscroll-toggle')) {
-      state.logAutoScroll = !state.logAutoScroll;
-      if (state.logAutoScroll && state.logBuffer.length > 80) { state.logBuffer = state.logBuffer.slice(-80); state.renderedLogCount = 0; }
-      syncDiagnosticsDom(state);
-      return;
-    }
-    if (target.closest('#diag-clear-logs-btn')) {
-      state.logBuffer = [];
-      state.renderedLogCount = 0;
-      syncDiagnosticsDom(state);
-      return;
-    }
-    const termKillBtn = target.closest('.term-kill-btn');
-    if (termKillBtn) {
-      const terminalId = termKillBtn.getAttribute('data-terminal-id');
-      const term = (state.diagData?.terminals || []).find((t) => t.terminalId === terminalId);
-      if (terminalId && confirmAction(`kill:${terminalId}`, `Terminate "${term?.title || 'terminal'}" (PID ${term?.pid || '?'})?`)) {
-        await runAction('Could not terminate terminal', '/api/terminals/close', { terminalId });
-        await refreshDiagnostics();
-      }
-      return;
-    }
-    const fixBtn = target.closest('[data-action="fix-with-agent"]');
-    if (fixBtn) {
-      if (!e._cmFixHandled) { e._cmFixHandled = true; await window.ContextMonitor.handleFixWithAgent?.(fixBtn); }
-      return;
-    }
-    const sidecarRestartBtn = target.closest('.sidecar-restart-btn');
-    if (sidecarRestartBtn) {
-      const sidecarId = sidecarRestartBtn.getAttribute('data-sidecar-id');
-      const sidecar = (state.diagData?.sidecars || []).find((s) => s.sidecarId === sidecarId);
-      if (sidecarId && confirmAction(`restart:${sidecarId}`, `Restart ${sidecar?.displayName || sidecarId}?`)) {
-        await runAction('Could not restart sidecar', '/api/sidecars/restart', { sidecarId });
-        await refreshDiagnostics();
-      }
-    }
+    if (handleContextClick?.(target, state, resetPinTracking, refreshTelemetry, refreshDiagnostics, render)) return;
+    if (await handleMcpAction?.(target, state, computeTabBodyHtml, runAction, refreshTelemetry, apiCall, render)) return;
+    await handleDiagnosticsAction?.(target, e, state, confirmAction, runAction, refreshDiagnostics);
   }
 
   function render() {
     if (!state.latestData || !appRoot) return;
-    ensureShellMounted();
+    ensureShellMounted(appRoot, state, resetPinTracking, refreshTelemetry);
     const headerSlot = document.getElementById('card-header-slot');
     const tabSlot = document.getElementById('card-tab-slot');
     const sessionSelect = document.getElementById('session-select');
@@ -243,11 +76,13 @@
     if (headerSlot) {
       const isPulseActive = Boolean(state.latestData.isExecuting || Date.now() - state.lastTokenChangeAt < PULSE_HOLD_MS);
       const nextHdr = renderTopHeaderAndTabs(state.latestData, state, isPulseActive);
-      if (nextHdr !== state.lastHeaderHtml) { headerSlot.innerHTML = nextHdr; state.lastHeaderHtml = nextHdr; }
+      if (nextHdr !== state.lastHeaderHtml) {
+        setHtml(headerSlot, nextHdr);
+        state.lastHeaderHtml = nextHdr;
+      }
     }
-    if (state.activeTab === 'diagnostics') {
-      syncDiagnosticsDom(state);
-    } else if (tabSlot) {
+    if (state.activeTab === 'diagnostics') syncDiagnosticsDom(state);
+    else if (tabSlot) {
       const nextBody = computeTabBodyHtml();
       if (nextBody !== state.lastTabHtml) {
         const savedScrolls = new Map();
@@ -255,7 +90,7 @@
           const box = det.querySelector('.checkpoint-summary');
           if (box && box.scrollTop > 0) savedScrolls.set(det.getAttribute('data-cp-index'), box.scrollTop);
         });
-        tabSlot.innerHTML = nextBody;
+        setHtml(tabSlot, nextBody);
         state.lastTabHtml = nextBody;
         savedScrolls.forEach((scrollTop, idx) => {
           const box = tabSlot.querySelector(`.checkpoint-details[data-cp-index="${idx}"] .checkpoint-summary`);
@@ -267,14 +102,13 @@
     if (sessionSelect && !state.isSelectMenuOpen) {
       const nextHtml = renderSessionOptions(state.latestData.sessions, state.latestData.session, state.pinnedCascadeId);
       if (nextHtml !== state.lastOptionsSig) {
-        sessionSelect.innerHTML = nextHtml;
+        setHtml(sessionSelect, nextHtml);
         sessionSelect.value = state.pinnedCascadeId;
         state.lastOptionsSig = nextHtml;
       }
     }
   }
 
-  let diagInFlight = null;
   async function refreshDiagnostics() {
     if (state.activeTab !== 'diagnostics') return;
     if (diagInFlight) return diagInFlight;
@@ -286,8 +120,9 @@
         });
         if (state.logTailingEnabled && Array.isArray(state.diagData?.logs)) mergeIncomingLogs(state, state.diagData.logs);
         render();
-      } catch { /* ignore transient polling error */ }
-      finally { diagInFlight = null; }
+      } catch {} finally {
+        diagInFlight = null;
+      }
     })();
     return diagInFlight;
   }
@@ -296,22 +131,19 @@
     if (!manual && !force && telemetryInFlight) return;
     const reqId = ++telemetrySeq;
     telemetryInFlight = true;
-    if (manual) { state.isRefreshing = true; render(); }
+    if (manual) {
+      state.isRefreshing = true;
+      render();
+    }
     try {
-      const data = await apiCall('/api/telemetry', {
-        cascadeId: state.pinnedCascadeId, hostCascadeId: state.hostCascadeId, workspaceUris: state.workspaceUris,
-      });
+      const data = await apiCall('/api/telemetry', { cascadeId: state.pinnedCascadeId, hostCascadeId: state.hostCascadeId, workspaceUris: state.workspaceUris });
       if (reqId !== telemetrySeq) return;
       if (data?.theme) applyTheme(data.theme);
       const activeId = data?.session?.cascadeId || '';
       const totalUsed = data?.context?.totalUsedTokens ?? 0;
       if (state.lastCascadeId && state.lastCascadeId !== activeId) state.openCheckpoints.clear();
-      if (state.lastTotalTokens !== null && state.lastCascadeId === activeId && totalUsed !== state.lastTotalTokens) {
-        state.lastTokenChangeAt = Date.now();
-      }
-      if (!state.pinnedCascadeId && !data?.session?.isSubagent && activeId) {
-        state.autoRootCascadeId = activeId;
-      }
+      if (state.lastTotalTokens !== null && state.lastCascadeId === activeId && totalUsed !== state.lastTotalTokens) state.lastTokenChangeAt = Date.now();
+      if (!state.pinnedCascadeId && !data?.session?.isSubagent && activeId) state.autoRootCascadeId = activeId;
       state.lastCascadeId = activeId;
       syncActiveConvId(activeId);
       state.lastTotalTokens = totalUsed;
@@ -321,9 +153,7 @@
     } catch (err) {
       if (reqId !== telemetrySeq) return;
       state.isRefreshing = false;
-      if (!state.latestData && appRoot) {
-        appRoot.innerHTML = `<div class="error-banner">Telemetry sync error: ${esc(err.message)}</div>`;
-      }
+      if (!state.latestData && appRoot) setHtml(appRoot, html`<div class="error-banner">Telemetry sync error: ${esc(err.message)}</div>`);
     } finally {
       if (reqId === telemetrySeq) telemetryInFlight = false;
     }
@@ -332,29 +162,21 @@
   appRoot?.addEventListener('click', handleAppClick);
   appRoot?.addEventListener('toggle', (e) => {
     const det = e.target;
-    if (det instanceof HTMLDetailsElement && det.classList.contains('checkpoint-details')) {
-      const idx = det.getAttribute('data-cp-index');
-      if (idx) { if (det.open) state.openCheckpoints.add(idx); else state.openCheckpoints.delete(idx); }
-    }
+    if (!(det instanceof HTMLDetailsElement) || !det.classList.contains('checkpoint-details')) return;
+    const idx = det.getAttribute('data-cp-index');
+    if (idx) state.openCheckpoints[det.open ? 'add' : 'delete'](idx);
   }, true);
 
-  // Hangar keeps hidden deck tabs mounted; it tells this frame when it is shown or hidden
-  let hostVisible = true;
-  // A host can also hide this frame with CSS without saying so (Antigravity keeping an old conversation
-  // view mounted). document.hidden stays false then, but IntersectionObserver sees the frame leave the
-  // viewport for display:none, content-visibility:hidden and offscreen hiding, through nested frames too
-  let inViewport = true;
   if (typeof IntersectionObserver === 'function') {
     new IntersectionObserver((entries) => {
       const next = entries[entries.length - 1].isIntersecting;
-      if (next === inViewport) return;
-      inViewport = next;
-      syncPolling();
+      if (next !== inViewport) {
+        inViewport = next;
+        syncPolling();
+      }
     }).observe(document.documentElement);
   }
-  const isPaneVisible = () => hostVisible && inViewport && !document.hidden;
 
-  // A real change starts a fresh poll even if one is in flight; the stale response is dropped
   window.sidecar?.onWorkspaceChange?.((uris) => {
     const next = Array.isArray(uris) ? uris : [];
     if (JSON.stringify(next) === JSON.stringify(state.workspaceUris)) return;
@@ -366,10 +188,10 @@
     }
     refreshTelemetry(false, true);
   });
+
   window.addEventListener('message', (e) => {
     if (e.source !== window.parent) return;
     if (e.data?.type === 'theme-change' && e.data?.payload) applyTheme(e.data.payload);
-    // Antigravity never sends this (it gives each conversation its own frame); Hangar 1.2.x does
     if (e.data?.type === 'conversation-change' && typeof e.data?.payload?.conversationId === 'string') {
       if (e.data.payload.conversationId !== state.hostCascadeId) {
         state.hostCascadeId = e.data.payload.conversationId;
@@ -386,7 +208,6 @@
     }
   });
 
-  // Only one timer is ever pending: each tick schedules the next once its requests finish
   function schedulePoll() {
     clearTimeout(pollTimer);
     pollTimer = 0;
@@ -401,43 +222,24 @@
     schedulePoll();
   }
 
-  // Pause polling while the pane is hidden; refresh immediately once it is visible again
   function syncPolling() {
     clearTimeout(pollTimer);
     pollTimer = 0;
     if (isPaneVisible()) pollTick();
   }
 
-  let lastSeenMutationAt = 0, activeEs = null, esRetryTimer = 0, esBackoffMs = 1000;
-  function connectStateEvents() {
-    if (typeof window.EventSource !== 'function') return;
-    clearTimeout(esRetryTimer);
-    try { activeEs?.close?.(); } catch {}
-    const token = new URLSearchParams(window.location?.search || '').get('token');
-    const es = (activeEs = new window.EventSource(token ? `/api/events?token=${encodeURIComponent(token)}` : '/api/events'));
-    es.onopen = () => { esBackoffMs = 1000; };
-    const onState = (ev) => {
-      try {
-        const raw = JSON.parse(ev?.data || '{}');
-        const st = raw?.state || raw;
-        if (st?.lastMutationAt && st.lastMutationAt > lastSeenMutationAt) {
-          lastSeenMutationAt = st.lastMutationAt;
-          if (!isPaneVisible()) return;
-          refreshTelemetry(false, true);
-          if (state.activeTab === 'diagnostics') refreshDiagnostics();
-        }
-      } catch { /* ignore malformed SSE payload */ }
-    };
-    es.addEventListener?.('state', onState);
-    es.addEventListener?.('state_changed', onState);
-    es.onmessage = onState;
-    es.onerror = () => {
-      try { es.close?.(); } catch {}
-      esRetryTimer = setTimeout(() => { esBackoffMs = Math.min(esBackoffMs * 2, 30000); connectStateEvents(); }, esBackoffMs);
-    };
-  }
-  if (document.readyState === 'complete') connectStateEvents();
-  else window.addEventListener('load', connectStateEvents, { once: true });
+  window.AgyShell?.subscribeStateSyncEvents?.({
+    url: '/api/events',
+    immediate: true,
+    onStateEvent: (st) => {
+      if (st?.lastMutationAt && st.lastMutationAt > lastSeenMutationAt) {
+        lastSeenMutationAt = st.lastMutationAt;
+        if (!isPaneVisible()) return;
+        refreshTelemetry(false, true);
+        if (state.activeTab === 'diagnostics') refreshDiagnostics();
+      }
+    },
+  });
 
   document.addEventListener('visibilitychange', syncPolling);
   syncPolling();

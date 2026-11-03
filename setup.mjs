@@ -25,6 +25,7 @@ runSidecarSetup({
     'ui/app.js',
     'ui/components/context-tab.js',
     'ui/components/context-drawers.js',
+    'ui/components/subagent-drawer.js',
     'ui/components/mcp-budgets-tab.js',
     'ui/components/diagnostics-tab.js',
   ],

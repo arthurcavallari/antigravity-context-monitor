@@ -1,85 +1,44 @@
-/**
- * @fileoverview Renders Tab 3 (Opt-in Memory-Safe Diagnostics Log Tail,
- * Auto-Scroll Toggle, Active Background Terminals Reaper, and Sidecar Matrix)
- * and manages incremental DOM updates for zero-jitter log scrolling.
- */
-
+/** @fileoverview Renders Tab 3 (Diagnostics Log Tail, Auto-Scroll, Terminals Reaper, Sidecar Matrix). */
 (function () {
-  window.ContextMonitor = window.ContextMonitor || {};
-  const { esc, icon, formatBadgeLabel } = window.ContextMonitor;
-
+  const cm = (window.ContextMonitor = window.ContextMonitor || {});
+  const { esc, icon, formatBadgeLabel, html, setHtml } = cm;
   const MAX_LIVE_LOG_LINES = 80;
   const MAX_PAUSED_LOG_LINES = 300;
   const SAFE_ID_RE = /^[a-zA-Z0-9._-]+$/;
   const LOOPBACK_ORIGIN_RE = /^(?:https?:\/\/)(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
-
-  function isSafePluginId(id) {
-    return typeof id === 'string' && SAFE_ID_RE.test(id) && !id.includes('..') && id !== '.';
-  }
+  const isSafePluginId = (id) => typeof id === 'string' && SAFE_ID_RE.test(id) && !id.includes('..') && id !== '.';
+  const getLogText = (entry) => (typeof entry === 'string' ? entry : (entry?.text ?? ''));
 
   function navigateToHangarPlugin(pluginId) {
     const raw = typeof pluginId === 'string' ? pluginId.trim() : '';
     const parts = raw.split('/');
-    if (parts.length > 2 || raw.includes('..')) {
-      return { ok: false, pluginId: '' };
-    }
+    if (parts.length > 2 || raw.includes('..')) return { ok: false, pluginId: '' };
     const candidate = parts.length === 2 ? parts[0].trim() : raw;
     const subCandidate = parts.length === 2 ? parts[1].trim() : '';
-    if (!isSafePluginId(candidate) || (parts.length === 2 && !isSafePluginId(subCandidate))) {
-      return { ok: false, pluginId: '' };
-    }
-    const payload = {
-      type: 'hangar-navigate',
-      targetTab: 'plugins',
-      pluginId: candidate,
-      ...(subCandidate ? { targetId: `${candidate}/${subCandidate}` } : {}),
-    };
+    if (!isSafePluginId(candidate) || (parts.length === 2 && !isSafePluginId(subCandidate))) return { ok: false, pluginId: '' };
+    const payload = { type: 'hangar-navigate', targetTab: 'plugins', pluginId: candidate, ...(subCandidate ? { targetId: `${candidate}/${subCandidate}` } : {}) };
     if (typeof window !== 'undefined' && window.parent && typeof window.parent.postMessage === 'function') {
       let targetOrigin = '*';
       try {
-        if (typeof document !== 'undefined' && document.referrer) {
-          const refOrigin = new URL(document.referrer).origin;
-          if (refOrigin && LOOPBACK_ORIGIN_RE.test(refOrigin)) targetOrigin = refOrigin;
-        } else if (window.parent === window && window.location?.origin && LOOPBACK_ORIGIN_RE.test(window.location.origin)) {
-          targetOrigin = window.location.origin;
-        }
+        const refOrigin = typeof document !== 'undefined' && document.referrer ? new URL(document.referrer).origin : '';
+        if (refOrigin && LOOPBACK_ORIGIN_RE.test(refOrigin)) targetOrigin = refOrigin;
+        else if (window.parent === window && window.location?.origin && LOOPBACK_ORIGIN_RE.test(window.location.origin)) targetOrigin = window.location.origin;
       } catch {}
       window.parent.postMessage(payload, targetOrigin);
     }
     return { ok: true, pluginId: candidate, payload };
   }
 
-  function getLogText(entry) {
-    return typeof entry === 'string' ? entry : (entry?.text ?? '');
-  }
-
   function findLogOverlapOffset(existing, incoming) {
-    if (!Array.isArray(existing) || existing.length === 0 || !Array.isArray(incoming) || incoming.length === 0) {
-      return 0;
-    }
+    if (!Array.isArray(existing) || !existing.length || !Array.isArray(incoming) || !incoming.length) return 0;
     const maxOverlap = Math.min(existing.length, incoming.length);
-    const minSuffix = existing.length < 3 ? 1 : 2;
-    for (let k = maxOverlap; k >= minSuffix; k--) {
-      let matches = true;
-      for (let j = 0; j < k; j++) {
-        if (getLogText(incoming[j]) !== getLogText(existing[existing.length - k + j])) {
-          matches = false;
-          break;
-        }
-      }
-      if (matches) return k;
+    for (let k = maxOverlap; k >= (existing.length < 3 ? 1 : 2); k--) {
+      if (existing.slice(-k).every((item, j) => getLogText(incoming[j]) === getLogText(item))) return k;
     }
     const anchorLen = Math.min(3, existing.length, incoming.length);
     const anchor = existing.slice(-anchorLen).map(getLogText);
     for (let i = incoming.length - anchorLen; i >= 0; i--) {
-      let matches = true;
-      for (let j = 0; j < anchorLen; j++) {
-        if (getLogText(incoming[i + j]) !== anchor[j]) {
-          matches = false;
-          break;
-        }
-      }
-      if (matches) return i + anchorLen;
+      if (anchor.every((txt, j) => getLogText(incoming[i + j]) === txt)) return i + anchorLen;
     }
     return 0;
   }
@@ -87,29 +46,20 @@
   function mergeIncomingLogs(stateOrExisting, incoming = [], maxLines = MAX_PAUSED_LOG_LINES) {
     if (Array.isArray(stateOrExisting)) {
       const existing = stateOrExisting;
-      if (!Array.isArray(incoming) || incoming.length === 0) return existing.slice(-maxLines);
-      const isStringMode = existing.length > 0 ? typeof existing[0] === 'string' : typeof incoming[0] === 'string';
-      const normalizeItem = (item) => (isStringMode ? getLogText(item) : item);
-      if (existing.length === 0) {
-        return incoming.slice(-maxLines).map(normalizeItem);
-      }
-      const appendFrom = findLogOverlapOffset(existing, incoming);
-      const merged = existing.slice();
-      for (let i = appendFrom; i < incoming.length; i++) {
-        merged.push(normalizeItem(incoming[i]));
-      }
-      return merged.slice(-maxLines);
+      if (!Array.isArray(incoming) || !incoming.length) return existing.slice(-maxLines);
+      const isStr = existing.length > 0 ? typeof existing[0] === 'string' : typeof incoming[0] === 'string';
+      const norm = (item) => (isStr ? getLogText(item) : item);
+      if (!existing.length) return incoming.slice(-maxLines).map(norm);
+      return existing.concat(incoming.slice(findLogOverlapOffset(existing, incoming)).map(norm)).slice(-maxLines);
     }
-
     const state = stateOrExisting;
-    if (!state || !Array.isArray(state.logBuffer) || !Array.isArray(incoming) || incoming.length === 0) return state?.logBuffer;
-    if (state.logBuffer.length === 0) {
+    if (!state || !Array.isArray(state.logBuffer) || !Array.isArray(incoming) || !incoming.length) return state?.logBuffer;
+    if (!state.logBuffer.length) {
       state.logBuffer = incoming.slice(-MAX_LIVE_LOG_LINES);
       return state.logBuffer;
     }
-    const appendFrom = findLogOverlapOffset(state.logBuffer, incoming);
-    for (let i = appendFrom; i < incoming.length; i++) {
-      if (state.logBuffer.length < maxLines) state.logBuffer.push(incoming[i]);
+    for (let i = findLogOverlapOffset(state.logBuffer, incoming); i < incoming.length && state.logBuffer.length < maxLines; i++) {
+      state.logBuffer.push(incoming[i]);
     }
     if (state.logAutoScroll && state.logBuffer.length > MAX_LIVE_LOG_LINES) {
       state.logBuffer = state.logBuffer.slice(-MAX_LIVE_LOG_LINES);
@@ -122,25 +72,7 @@
     const tailOn = Boolean(uiState.logTailingEnabled);
     const autoScroll = Boolean(uiState.logAutoScroll);
     const hideStyle = tailOn ? '' : ' style="display:none"';
-    return `
-      <span class="plan-title">Task Logs <span id="diag-log-count-pill" class="agy-count-pill">${
-        tailOn ? logsCount : 'Paused'
-      }</span></span>
-      <div class="mcp-card-actions" style="flex-wrap:wrap">
-        <button id="diag-clear-logs-btn" class="agy-btn agy-btn-secondary"${hideStyle}>Clear</button>
-        <button id="diag-autoscroll-toggle" type="button" role="switch" aria-checked="${autoScroll}" class="overage-toggle" title="Toggle automatic scrolling to newest log lines"${hideStyle}>
-          <span>Auto-scroll</span>
-          <span class="agy-switch sm ${autoScroll ? 'on' : ''}">
-            <span class="agy-switch-thumb"></span>
-          </span>
-        </button>
-        <button id="diag-log-toggle" type="button" role="switch" aria-checked="${tailOn}" class="overage-toggle" title="Toggle live Language Server log tailing">
-          <span>Tail</span>
-          <span class="agy-switch sm ${tailOn ? 'on' : ''}">
-            <span class="agy-switch-thumb"></span>
-          </span>
-        </button>
-      </div>`;
+    return html`<span class="plan-title">Task Logs <span id="diag-log-count-pill" class="agy-count-pill">${tailOn ? logsCount : 'Paused'}</span></span><div class="mcp-card-actions" style="flex-wrap:wrap"><button id="diag-clear-logs-btn" class="agy-btn agy-btn-secondary"${hideStyle}>Clear</button><button id="diag-autoscroll-toggle" type="button" role="switch" aria-checked="${autoScroll}" class="overage-toggle" title="Toggle automatic scrolling to newest log lines"${hideStyle}><span>Auto-scroll</span><agy-switch class="agy-switch sm ${autoScroll ? 'on' : ''}" size="sm" ${autoScroll ? 'checked' : ''}><span class="agy-switch-thumb"></span></agy-switch></button><button id="diag-log-toggle" type="button" role="switch" aria-checked="${tailOn}" class="overage-toggle" title="Toggle live Language Server log tailing"><span>Tail</span><agy-switch class="agy-switch sm ${tailOn ? 'on' : ''}" size="sm" ${tailOn ? 'checked' : ''}><span class="agy-switch-thumb"></span></agy-switch></button></div>`;
   }
 
   function renderDiagnosticsLists(diagData) {
@@ -148,181 +80,94 @@
     const refreshSvg = icon('refresh', 14);
     const terminals = Array.isArray(diagData?.terminals) ? diagData.terminals : [];
     const sidecars = Array.isArray(diagData?.sidecars) ? diagData.sidecars : [];
-
-    const terminalsHtml =
-      terminals.length > 0
-        ? `<div class="mcp-list-card">${terminals
-            .map(
-              (t) => `
-              <div class="mcp-card-row">
-                <div class="mcp-card-info">
-                  <div class="mcp-card-title">
-                    <span>${esc(t.title)}</span>
-                    <span class="agy-badge off"><span class="agy-badge-dot"></span>PID ${esc(t.pid)}</span>
-                  </div>
-                  <div class="mcp-card-meta" title="${esc(t.workspaceUri)}">${esc(t.workspaceUri || 'No workspace')}</div>
-                </div>
-                <div class="mcp-card-actions">
-                  <button class="agy-icon-btn term-kill-btn" data-terminal-id="${esc(t.terminalId)}" title="Terminate process ${esc(t.pid)}">${closeSvg}</button>
-                </div>
-              </div>`
-            )
-            .join('')}</div>`
-        : '<div class="empty-hint">No active background terminals</div>';
-
     const issues = Array.isArray(diagData?.warnings) ? diagData.warnings : Array.isArray(diagData?.issues) ? diagData.issues : [];
-    const issuesHtml =
-      issues.length > 0
-        ? `<div class="mcp-list-card">${issues
-            .map((item) => {
-              const text = typeof item === 'string' ? item : item?.message || item?.title || 'Diagnostic warning';
-              const pluginId = typeof item === 'object' ? (item?.pluginId || item?.pluginName || '') : '';
-              const hangarBtn = pluginId
-                ? `<button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(pluginId)}" title="Inspect ${esc(pluginId)} in Hangar">Inspect in Hangar</button>`
-                : '';
-              return `<div class="mcp-card-row"><div class="mcp-card-info"><div class="mcp-card-title"><span>${esc(text)}</span></div></div><div class="mcp-card-actions">${hangarBtn}<button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-summary="${esc(text)}" title="Send diagnostic to Agent">Fix with Agent</button></div></div>`;
-            })
-            .join('')}</div>`
-        : '';
-
-    const sidecarsHtml =
-      sidecars.length > 0
-        ? `<div class="mcp-list-card">${sidecars
-            .map((s) => {
-              let badgeCls = 'agy-badge off';
-              if (s.isRunning) badgeCls = 'agy-badge ready';
-              else if (s.isErrored) badgeCls = 'agy-badge error';
-              const isUnhealthy = Boolean(
-                s.isErrored || s.lastError || s.statusBadge === 'ERRORED' || s.statusBadge === 'ERROR' || s.healthy === false
-              );
-              const fixSummary = `Sidecar "${s.displayName || s.sidecarId}" is unhealthy (${s.statusBadge || 'ERRORED'})${
-                s.lastError ? `: ${s.lastError}` : ''
-              }. Please inspect and fix it.`;
-              const navTarget = s.pluginId || s.pluginName || s.sidecarId || '';
-              const hangarBtnHtml =
-                isUnhealthy && navTarget
-                  ? `<button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(navTarget)}" title="Inspect ${esc(s.displayName || navTarget)} in Hangar">Inspect in Hangar</button>`
-                  : '';
-              const fixBtnHtml = isUnhealthy
-                ? `<button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-sidecar-id="${esc(s.sidecarId)}" data-summary="${esc(fixSummary)}" title="Send diagnostic to Agent">Fix with Agent</button>`
-                : '';
-
-              return `
-                <div class="mcp-card-row">
-                  <div class="mcp-card-info">
-                    <div class="mcp-card-title">
-                      <span>${esc(s.displayName)}</span>
-                      <span class="${badgeCls}"><span class="agy-badge-dot"></span>${esc(formatBadgeLabel(s.statusBadge))}</span>
-                    </div>
-                    <div class="mcp-card-meta">${s.webPort ? `Port ${esc(s.webPort)}` : 'No port'}${s.lastError ? ` · ${esc(s.lastError)}` : ''}</div>
-                  </div>
-                  <div class="mcp-card-actions">
-                    ${hangarBtnHtml}
-                    ${fixBtnHtml}
-                    <button class="agy-icon-btn sidecar-restart-btn" data-sidecar-id="${esc(s.sidecarId)}" title="Restart ${esc(s.displayName)}">${refreshSvg}</button>
-                  </div>
-                </div>`;
-            })
-            .join('')}</div>`
-        : '<div class="empty-hint">No sidecars registered</div>';
-
-    return `${issuesHtml}
-      <div class="plan-header" style="margin:12px 0 8px">
-        <span class="plan-title">Active Background Terminals <span class="agy-count-pill">${terminals.length}</span></span>
-      </div>
-      <div>${terminalsHtml}</div>
-      <div class="plan-header" style="margin:12px 0 8px">
-        <span class="plan-title">Sidecar Processes <span class="agy-count-pill">${sidecars.length}</span></span>
-      </div>
-      <div>${sidecarsHtml}</div>`;
+    const terminalsHtml = terminals.length
+      ? html`<div class="mcp-list-card">${terminals.map((t) => html`<div class="mcp-card-row"><div class="mcp-card-info"><div class="mcp-card-title"><span>${esc(t.title)}</span><span class="agy-badge off"><span class="agy-badge-dot"></span>PID ${esc(t.pid)}</span></div><div class="mcp-card-meta" title="${esc(t.workspaceUri)}">${esc(t.workspaceUri || 'No workspace')}</div></div><div class="mcp-card-actions"><button class="agy-icon-btn term-kill-btn" data-terminal-id="${esc(t.terminalId)}" title="Terminate process ${esc(t.pid)}">${closeSvg}</button></div></div>`)}</div>`
+      : html`<div class="empty-hint">No active background terminals</div>`;
+    const issuesHtml = issues.length
+      ? html`<div class="mcp-list-card">${issues.map((item) => {
+          const text = typeof item === 'string' ? item : item?.message || item?.title || 'Diagnostic warning';
+          const pluginId = typeof item === 'object' ? (item?.pluginId || item?.pluginName || '') : '';
+          const hangarBtn = pluginId ? html`<button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(pluginId)}" title="Inspect ${esc(pluginId)} in Hangar">Inspect in Hangar</button>` : '';
+          return html`<div class="mcp-card-row"><div class="mcp-card-info"><div class="mcp-card-title"><span>${esc(text)}</span></div></div><div class="mcp-card-actions">${hangarBtn}<button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-summary="${esc(text)}" title="Send diagnostic to Agent">Fix with Agent</button></div></div>`;
+        })}</div>`
+      : '';
+    const sidecarsHtml = sidecars.length
+      ? html`<div class="mcp-list-card">${sidecars.map((s) => {
+          const badgeCls = s.isRunning ? 'agy-badge ready' : s.isErrored ? 'agy-badge error' : 'agy-badge off';
+          const isUnhealthy = Boolean(s.isErrored || s.lastError || s.statusBadge === 'ERRORED' || s.statusBadge === 'ERROR' || s.healthy === false);
+          const fixSummary = `Sidecar "${s.displayName || s.sidecarId}" is unhealthy (${s.statusBadge || 'ERRORED'})${s.lastError ? `: ${s.lastError}` : ''}. Please inspect and fix it.`;
+          const navTarget = s.pluginId || s.pluginName || s.sidecarId || '';
+          const hangarBtnHtml = isUnhealthy && navTarget ? html`<button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(navTarget)}" title="Inspect ${esc(s.displayName || navTarget)} in Hangar">Inspect in Hangar</button>` : '';
+          const fixBtnHtml = isUnhealthy ? html`<button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-sidecar-id="${esc(s.sidecarId)}" data-summary="${esc(fixSummary)}" title="Send diagnostic to Agent">Fix with Agent</button>` : '';
+          return html`<div class="mcp-card-row"><div class="mcp-card-info"><div class="mcp-card-title"><span>${esc(s.displayName)}</span><span class="${badgeCls}"><span class="agy-badge-dot"></span>${esc(formatBadgeLabel(s.statusBadge))}</span></div><div class="mcp-card-meta">${s.webPort ? `Port ${esc(s.webPort)}` : 'No port'}${s.lastError ? ` · ${esc(s.lastError)}` : ''}</div></div><div class="mcp-card-actions">${hangarBtnHtml}${fixBtnHtml}<button class="agy-icon-btn sidecar-restart-btn" data-sidecar-id="${esc(s.sidecarId)}" title="Restart ${esc(s.displayName)}">${refreshSvg}</button></div></div>`;
+        })}</div>`
+      : html`<div class="empty-hint">No sidecars registered</div>`;
+    return html`${issuesHtml}<div class="plan-header" style="margin:12px 0 8px"><span class="plan-title">Active Background Terminals <span class="agy-count-pill">${terminals.length}</span></span></div><div>${terminalsHtml}</div><div class="plan-header" style="margin:12px 0 8px"><span class="plan-title">Sidecar Processes <span class="agy-count-pill">${sidecars.length}</span></span></div><div>${sidecarsHtml}</div>`;
   }
 
   async function handleFixWithAgent(targetOrSummary) {
-    const summary =
-      typeof targetOrSummary === 'string'
-        ? targetOrSummary
-        : targetOrSummary?.getAttribute?.('data-summary') ||
-          targetOrSummary?.dataset?.summary ||
-          'Context Monitor diagnostic warning reported.';
+    const summary = typeof targetOrSummary === 'string'
+      ? targetOrSummary
+      : targetOrSummary?.getAttribute?.('data-summary') || targetOrSummary?.dataset?.summary || 'Context Monitor diagnostic warning reported.';
     try {
-      if (typeof window.ContextMonitor?.notifyAgent === 'function') {
-        const res = await window.ContextMonitor.notifyAgent({ message: summary, severity: 'warning', triggerTurn: true, title: 'Context Monitor Diagnostics' });
+      if (typeof cm.notifyAgent === 'function') {
+        const res = await cm.notifyAgent({ message: summary, severity: 'warning', triggerTurn: true, title: 'Context Monitor Diagnostics' });
         if (res?.ok === false) throw new Error(res.error || 'Notification rejected');
       }
-      window.ContextMonitor?.showToast?.('Sent diagnostic to Agent', 'info');
+      cm.showToast?.('Sent diagnostic to Agent', 'info');
       return { ok: true, message: summary };
     } catch (err) {
-      window.ContextMonitor?.showToast?.(`Failed to notify Agent: ${err.message}`, 'error');
+      cm.showToast?.(`Failed to notify Agent: ${err.message}`, 'error');
       return { ok: false, error: err.message };
     }
   }
 
   function renderDiagnosticsTab(diagData, uiState = {}) {
     const logs = Array.isArray(uiState.displayLogs) ? uiState.displayLogs : [];
-    return `
-      <div class="sub-card">
-        <div id="diag-log-header" class="plan-header" style="margin-bottom:6px;flex-wrap:wrap;gap:6px">
-          ${renderDiagnosticsControls(logs.length, uiState)}
-        </div>
-        <div id="diag-log-body"></div>
-      </div>
-      <div id="diag-lists-slot">
-        ${renderDiagnosticsLists(diagData)}
-      </div>`;
+    return html`<div class="sub-card"><div id="diag-log-header" class="plan-header" style="margin-bottom:6px;flex-wrap:wrap;gap:6px">${renderDiagnosticsControls(logs.length, uiState)}</div><div id="diag-log-body"></div></div><div id="diag-lists-slot">${renderDiagnosticsLists(diagData)}</div>`;
   }
 
   function syncDiagnosticsDom(state) {
     const tabSlot = document.getElementById('card-tab-slot');
     if (!tabSlot) return;
-
     if (!document.getElementById('diag-log-body')) {
-      tabSlot.innerHTML = renderDiagnosticsTab(state.diagData, {
-        logTailingEnabled: state.logTailingEnabled,
-        logAutoScroll: state.logAutoScroll,
-        displayLogs: state.logBuffer,
-      });
+      setHtml(tabSlot, renderDiagnosticsTab(state.diagData, { logTailingEnabled: state.logTailingEnabled, logAutoScroll: state.logAutoScroll, displayLogs: state.logBuffer }));
       state.lastDiagHeaderHtml = 'mounted';
       state.lastDiagListsHtml = '';
       state.renderedLogCount = 0;
     }
-
     const tailOn = Boolean(state.logTailingEnabled);
     const autoScroll = Boolean(state.logAutoScroll);
     const pillEl = document.getElementById('diag-log-count-pill');
     if (pillEl) pillEl.textContent = tailOn ? String(state.logBuffer.length) : 'Paused';
     const clearBtn = document.getElementById('diag-clear-logs-btn');
     if (clearBtn) clearBtn.style.display = tailOn ? '' : 'none';
-    const autoBtn = document.getElementById('diag-autoscroll-toggle');
-    if (autoBtn) {
-      autoBtn.style.display = tailOn ? '' : 'none';
-      autoBtn.setAttribute('aria-checked', String(autoScroll));
-      autoBtn.querySelector('.agy-switch')?.classList.toggle('on', autoScroll);
+    for (const [id, on, show] of [['diag-autoscroll-toggle', autoScroll, tailOn], ['diag-log-toggle', tailOn, true]]) {
+      const btn = document.getElementById(id);
+      if (btn) {
+        btn.style.display = show ? '' : 'none';
+        btn.setAttribute('aria-checked', String(on));
+        btn.querySelector('.agy-switch')?.classList.toggle('on', on);
+      }
     }
-    const tailBtn = document.getElementById('diag-log-toggle');
-    if (tailBtn) {
-      tailBtn.setAttribute('aria-checked', String(tailOn));
-      tailBtn.querySelector('.agy-switch')?.classList.toggle('on', tailOn);
-    }
-
     const bodyEl = document.getElementById('diag-log-body');
     if (bodyEl) {
-      if (!state.logTailingEnabled) {
-        bodyEl.innerHTML =
-          '<div class="empty-hint">Log tailing is OFF by default to conserve memory. Toggle ON above to inspect live HTTP 429 retries and Language Server traces.</div>';
+      if (!tailOn) {
+        setHtml(bodyEl, html`<div class="empty-hint">Log tailing is OFF by default to conserve memory. Toggle ON above to inspect live HTTP 429 retries and Language Server traces.</div>`);
         state.renderedLogCount = 0;
-      } else if (state.logBuffer.length === 0) {
-        bodyEl.innerHTML = '<div class="empty-hint">Waiting for diagnostic log lines…</div>';
+      } else if (!state.logBuffer.length) {
+        setHtml(bodyEl, html`<div class="empty-hint">Waiting for diagnostic log lines…</div>`);
         state.renderedLogCount = 0;
       } else {
         let logEl = document.getElementById('diag-log-console');
         if (!logEl) {
-          bodyEl.innerHTML = '<div id="diag-log-console" class="log-console"></div>';
+          setHtml(bodyEl, html`<div id="diag-log-console" class="log-console"></div>`);
           logEl = document.getElementById('diag-log-console');
           state.renderedLogCount = 0;
           logEl?.addEventListener('scroll', () => {
             if (!logEl || state.isProgrammaticScroll) return;
-            const distFromBottom = logEl.scrollHeight - logEl.clientHeight - logEl.scrollTop;
-            const nextAuto = distFromBottom <= 16;
+            const nextAuto = logEl.scrollHeight - logEl.clientHeight - logEl.scrollTop <= 16;
             if (nextAuto !== state.logAutoScroll) {
               state.logAutoScroll = nextAuto;
               syncDiagnosticsDom(state);
@@ -330,38 +175,23 @@
           });
         }
         if (logEl) {
-          if (state.renderedLogCount === 0 || state.renderedLogCount > state.logBuffer.length) {
-            logEl.innerHTML = state.logBuffer
-              .map((l) => `<div class="log-line ${esc(l.level || 'info')}">${esc(l.text)}</div>`)
-              .join('');
-            state.renderedLogCount = state.logBuffer.length;
-          } else if (state.renderedLogCount < state.logBuffer.length) {
-            const frag = document.createDocumentFragment();
-            for (let i = state.renderedLogCount; i < state.logBuffer.length; i++) {
-              const row = document.createElement('div');
-              row.className = `log-line ${state.logBuffer[i].level || 'info'}`;
-              row.textContent = state.logBuffer[i].text;
-              frag.appendChild(row);
-            }
-            logEl.appendChild(frag);
+          if (state.renderedLogCount !== state.logBuffer.length) {
+            setHtml(logEl, state.logBuffer.map((l) => html`<div class="log-line ${esc(l.level || 'info')}">${esc(l.text)}</div>`).join(''));
             state.renderedLogCount = state.logBuffer.length;
           }
           if (state.logAutoScroll) {
             state.isProgrammaticScroll = true;
             logEl.scrollTop = logEl.scrollHeight;
-            requestAnimationFrame(() => {
-              state.isProgrammaticScroll = false;
-            });
+            requestAnimationFrame(() => { state.isProgrammaticScroll = false; });
           }
         }
       }
     }
-
     const listsEl = document.getElementById('diag-lists-slot');
     if (listsEl) {
       const nextLists = renderDiagnosticsLists(state.diagData);
       if (nextLists !== state.lastDiagListsHtml) {
-        listsEl.innerHTML = nextLists;
+        setHtml(listsEl, nextLists);
         state.lastDiagListsHtml = nextLists;
       }
     }
@@ -378,17 +208,12 @@
         return;
       }
       const btn = el?.closest?.('[data-action="fix-with-agent"]');
-      if (btn) { e._cmFixHandled = true; handleFixWithAgent(btn); }
+      if (btn) {
+        e._cmFixHandled = true;
+        handleFixWithAgent(btn);
+      }
     });
   }
 
-  Object.assign(window.ContextMonitor, {
-    mergeIncomingLogs,
-    renderDiagnosticsControls,
-    renderDiagnosticsLists,
-    renderDiagnosticsTab,
-    syncDiagnosticsDom,
-    handleFixWithAgent,
-    navigateToHangarPlugin,
-  });
+  Object.assign(cm, { mergeIncomingLogs, renderDiagnosticsControls, renderDiagnosticsLists, renderDiagnosticsTab, syncDiagnosticsDom, handleFixWithAgent, navigateToHangarPlugin, wireDiagnosticsInteractiveElements: () => {} });
 })();
