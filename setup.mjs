@@ -10,6 +10,7 @@ import { runSidecarSetup } from 'antigravity-sidecar-kit/setup';
 import { REPO_ROOT, SIDECAR_ID } from './lib/constants.mjs';
 
 function syncLocalSidecarKit() {
+  if (process.env.ANTIGRAVITY_DEV_SYNC_KIT !== '1') return;
   const siblingKitLib = join(REPO_ROOT, '..', 'antigravity-sidecar-kit', 'lib');
   const localKitLib = join(REPO_ROOT, 'node_modules', 'antigravity-sidecar-kit', 'lib');
   if (existsSync(siblingKitLib) && existsSync(join(REPO_ROOT, 'node_modules', 'antigravity-sidecar-kit'))) {

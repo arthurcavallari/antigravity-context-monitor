@@ -77,6 +77,14 @@ test('launch.mjs exports expected config and repo preserves TIER_1_TELEMETRY in 
       .split(/\r?\n/)
       .filter((l) => !l.includes('for (') && (l.match(/;/g) || []).length >= 3);
     assert.deepEqual(multiStmt, [], `ui/${jsRel} contains packed multi-statement lines`);
+    for (const deadIdentifier of [
+      'wireContextInteractiveElements',
+      'wireMcpInteractiveElements',
+      'wireDiagnosticsInteractiveElements',
+      '_cmFixHandled',
+    ]) {
+      assert.equal(src.includes(deadIdentifier), false, `ui/${jsRel} must not contain ${deadIdentifier}`);
+    }
   }
 });
 

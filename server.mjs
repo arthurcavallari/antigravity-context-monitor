@@ -37,7 +37,6 @@ let lastActiveCascadeId = '';
 export function createMonitorStateSync(targetApp, options = {}) {
   const mutators = createMonitorMutators(options.rpcOptions || {}, options.mutators || {});
   let sync;
-  let lastNotifyMeta = { severity: 'info', triggerTurn: true };
   const mcpTools = buildMcpTools({
     getSync: () => sync,
     rpcOpts: options.rpcOptions || {},
@@ -46,30 +45,24 @@ export function createMonitorStateSync(targetApp, options = {}) {
       lastActiveCascadeId = id;
     },
   });
-  const notifyOpt = options.notifyAgent
-    ? (msg, meta) => options.notifyAgent(msg, { ...meta, ...lastNotifyMeta })
-    : undefined;
+  const resolveConversation = (data, ctx) => {
+    const expConv = data.conversationId ?? data.conversation_id ?? data.cascadeId ?? ctx?.query?.conversationId;
+    const isNew = typeof expConv === 'string' && expConv.trim().toLowerCase() === '_new';
+    const fallbackConv = options.notifyAgent ? 'default' : '';
+    return isNew
+      ? (fallbackConv || '_new')
+      : String(expConv || lastActiveCascadeId || targetApp?.config?.conversationId || fallbackConv);
+  };
   sync = registerStateSyncRoutes(targetApp, {
     sidecarId: 'context-monitor',
     initialState: () => ({ lastMutationAt: 0, lastAction: null }),
     mcpTools,
+    resolveConversation,
     ...options,
-    ...(notifyOpt ? { notifyAgent: notifyOpt } : {}),
   });
   return wrapMonitorStateSync(sync, {
     mutators,
-    checkAuth: (d, ctx = {}) => checkMonitorAuth(d, ctx, options.authToken),
-    onNotifyMeta: (meta) => {
-      lastNotifyMeta = meta;
-    },
-    resolveConversation: (data, ctx) => {
-      const expConv = data.conversationId ?? data.conversation_id ?? data.cascadeId ?? ctx?.query?.conversationId;
-      const isNew = typeof expConv === 'string' && expConv.trim().toLowerCase() === '_new';
-      const fallbackConv = options.notifyAgent ? 'default' : '';
-      return isNew
-        ? (fallbackConv || '_new')
-        : String(expConv || lastActiveCascadeId || targetApp?.config?.conversationId || fallbackConv);
-    },
+    checkAuth: (d, ctx = {}) => checkMonitorAuth(sync, d, ctx),
   });
 }
 
@@ -83,7 +76,9 @@ app.page('/shell.js', createShellClientHandler({ ResponseClass: Response }));
 registerUiRoutes(app, { modules: ['core', 'tabs', 'overlays', 'controls', 'surfaces'], ResponseClass: Response });
 export const stateSync = createMonitorStateSync(app, isMain ? {} : { dataDir: '' });
 
-const handleTelemetry = async (d) => {
+const handleTelemetry = async (d, ctx) => {
+  const authErr = stateSync.checkAuth(d, ctx);
+  if (authErr) return authErr;
   const res = await fetchFullTelemetry({
     cascadeId: String(d?.cascadeId || ''),
     hostCascadeId: String(d?.hostCascadeId || ''),
@@ -95,7 +90,7 @@ const handleTelemetry = async (d) => {
 for (const m of ['POST', 'GET']) {
   app.api('/api/telemetry', handleTelemetry, m);
 }
-app.api('/api/diagnostics', async (d) => fetchDiagnosticsSnapshot({
+app.api('/api/diagnostics', async (d, ctx) => stateSync.checkAuth(d, ctx) || fetchDiagnosticsSnapshot({
   includeLogs: Boolean(d?.includeLogs),
   steps: Array.isArray(d?.steps)
     ? d.steps
