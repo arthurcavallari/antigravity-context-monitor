@@ -89,7 +89,7 @@
   function renderDiagnosticsControls(logsCount, uiState = {}) {
     const tailOn = Boolean(uiState.logTailingEnabled);
     const autoScroll = Boolean(uiState.logAutoScroll);
-    const hideStyle = tailOn ? '' : ' style="display:none"';
+    const hideStyle = tailOn ? '' : (cm.rawHtml ? cm.rawHtml(' style="display:none"') : ' style="display:none"');
     return html`
       <span class="plan-title">
         Task Logs <span id="diag-log-count-pill" class="agy-count-pill">${tailOn ? logsCount : 'Paused'}</span>
@@ -204,7 +204,7 @@
                     <span class="${badgeCls}"><span class="agy-badge-dot"></span>${esc(formatBadgeLabel(s.statusBadge))}</span>
                   </div>
                   <div class="mcp-card-meta">
-                    ${s.webPort ? `Port ${esc(s.webPort)}` : 'No port'}${s.lastError ? ` · ${esc(s.lastError)}` : ''}
+                    ${s.webPort ? html`Port ${esc(s.webPort)}` : 'No port'}${s.lastError ? html` · ${esc(s.lastError)}` : ''}
                   </div>
                 </div>
                 <div class="mcp-card-actions">
@@ -294,8 +294,16 @@
       const btn = document.getElementById(id);
       if (btn) {
         btn.style.display = show ? '' : 'none';
-        btn.setAttribute('aria-checked', String(on));
-        btn.querySelector('.agy-switch')?.classList.toggle('on', on);
+        if (window.AgyUI?.syncSwitchState) {
+          window.AgyUI.syncSwitchState(btn, on);
+        } else {
+          btn.setAttribute('aria-checked', String(on));
+          const sw = btn.querySelector('.agy-switch');
+          if (sw) {
+            sw.checked = on;
+            sw.classList?.toggle?.('on', on);
+          }
+        }
       }
     }
     const bodyEl = document.getElementById('diag-log-body');
@@ -356,22 +364,65 @@
     }
   }
 
-  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
-    document.addEventListener('click', (e) => {
-      if (e?._cmFixHandled) return;
-      const el = e?.target?.nodeType === 3 ? e.target.parentElement : e?.target;
-      const navBtn = el?.closest?.('[data-action="hangar-navigate"]');
-      if (navBtn) {
-        e._cmFixHandled = true;
-        navigateToHangarPlugin(navBtn.getAttribute?.('data-plugin-id') || navBtn.dataset?.pluginId || '');
-        return;
+  async function handleDiagnosticsAction(target, _e, state, confirmAction, runAction, refreshDiagnostics) {
+    const navBtn = target.closest('[data-action="hangar-navigate"]');
+    if (navBtn) {
+      navigateToHangarPlugin(navBtn.getAttribute?.('data-plugin-id') || navBtn.dataset?.pluginId || '');
+      return true;
+    }
+    if (target.closest('#diag-log-toggle')) {
+      state.logTailingEnabled = !state.logTailingEnabled;
+      if (state.logTailingEnabled) {
+        state.logAutoScroll = true;
+      } else {
+        state.logBuffer = [];
+        state.renderedLogCount = 0;
       }
-      const btn = el?.closest?.('[data-action="fix-with-agent"]');
-      if (btn) {
-        e._cmFixHandled = true;
-        handleFixWithAgent(btn);
+      refreshDiagnostics();
+      syncDiagnosticsDom(state);
+      return true;
+    }
+    if (target.closest('#diag-autoscroll-toggle')) {
+      state.logAutoScroll = !state.logAutoScroll;
+      if (state.logAutoScroll && state.logBuffer.length > MAX_LIVE_LOG_LINES) {
+        state.logBuffer = state.logBuffer.slice(-MAX_LIVE_LOG_LINES);
+        state.renderedLogCount = 0;
       }
-    });
+      syncDiagnosticsDom(state);
+      return true;
+    }
+    if (target.closest('#diag-clear-logs-btn')) {
+      state.logBuffer = [];
+      state.renderedLogCount = 0;
+      syncDiagnosticsDom(state);
+      return true;
+    }
+    const termKillBtn = target.closest('.term-kill-btn');
+    if (termKillBtn) {
+      const terminalId = termKillBtn.getAttribute('data-terminal-id');
+      const term = (state.diagData?.terminals || []).find((t) => t.terminalId === terminalId);
+      if (terminalId && confirmAction(`kill:${terminalId}`, `Terminate "${term?.title || 'terminal'}" (PID ${term?.pid || '?'})?`)) {
+        await runAction('Could not terminate terminal', '/api/terminals/close', { terminalId });
+        await refreshDiagnostics();
+      }
+      return true;
+    }
+    const fixBtn = target.closest('[data-action="fix-with-agent"]');
+    if (fixBtn) {
+      await handleFixWithAgent(fixBtn);
+      return true;
+    }
+    const sidecarRestartBtn = target.closest('.sidecar-restart-btn');
+    if (sidecarRestartBtn) {
+      const sidecarId = sidecarRestartBtn.getAttribute('data-sidecar-id');
+      const sidecar = (state.diagData?.sidecars || []).find((s) => s.sidecarId === sidecarId);
+      if (sidecarId && confirmAction(`restart:${sidecarId}`, `Restart ${sidecar?.displayName || sidecarId}?`)) {
+        await runAction('Could not restart sidecar', '/api/sidecars/restart', { sidecarId });
+        await refreshDiagnostics();
+      }
+      return true;
+    }
+    return false;
   }
 
   Object.assign(cm, {
@@ -382,6 +433,6 @@
     syncDiagnosticsDom,
     handleFixWithAgent,
     navigateToHangarPlugin,
-    wireDiagnosticsInteractiveElements: () => {},
+    handleDiagnosticsAction,
   });
 })();

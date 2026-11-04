@@ -1,7 +1,51 @@
 /** @fileoverview Renders Top Header, Tab Bar, and Tab 1 (Context Window, Drawers, Turn Strip, Plan Usage). */
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
-  const { esc, icon, html, setHtml } = cm;
+  const { esc, icon, html, rawHtml, setHtml } = cm;
+  const DRAWER_TOGGLES = {
+    '#model-badge-btn': 'modelProfileOpen',
+    '#context-help-btn': 'contextHelpOpen',
+    '#subagents-collapse-toggle': 'subagentsExpanded',
+    '#subagents-show-more-btn': 'subagentsShowAll',
+    '#mcp-collapse-toggle': 'mcpExpanded',
+    '#compactions-collapse-toggle': 'compactionsExpanded',
+    '#effort-fit-collapse-toggle': 'effortFitExpanded',
+    '#culprits-collapse-toggle': 'culpritsExpanded',
+  };
+
+  function handleContextClick(target, state, resetPinTracking, refreshTelemetry, refreshDiagnostics, render) {
+    const tabBtn = target.closest('.agy-toggle-item');
+    if (tabBtn) {
+      state.activeTab = tabBtn.getAttribute('data-tab') || 'context';
+      state.lastTabHtml = '';
+      if (state.activeTab === 'diagnostics') refreshDiagnostics();
+      render();
+      return true;
+    }
+    for (const [selector, stateKey] of Object.entries(DRAWER_TOGGLES)) {
+      if (target.closest(selector)) {
+        state[stateKey] = !state[stateKey];
+        render();
+        return true;
+      }
+    }
+    const subagentTarget = target.closest('[data-subagent-id]');
+    if (subagentTarget) {
+      const targetId = subagentTarget.getAttribute('data-subagent-id') || '';
+      if (targetId && targetId !== state.latestData?.session?.cascadeId) {
+        const autoRootId = state.autoRootCascadeId || state.hostCascadeId || state.latestData?.sessions?.[0]?.cascadeId || '';
+        resetPinTracking(autoRootId && targetId === autoRootId ? '' : targetId);
+        refreshTelemetry(true);
+      }
+      return true;
+    }
+    if (target.closest('#refresh-btn')) {
+      refreshTelemetry(true);
+      if (state.activeTab === 'diagnostics') refreshDiagnostics();
+      return true;
+    }
+    return false;
+  }
 
   function ensureShellMounted(appRoot, state, resetPinTracking, refreshTelemetry) {
     if (!appRoot || document.getElementById('card-tab-slot')) return;
@@ -53,7 +97,7 @@
     const subagentsRunning = Number(subagents?.runningCount || 0) > 0;
     const pulseActive = Boolean(isPulseActive || sessionRunning || subagentsRunning);
     const pulseTitle = !sessionRunning && subagentsRunning
-      ? `Subagent executing: ${esc(subagents.activeSubagentLabel || 'subagent')}`
+      ? html`Subagent executing: ${esc(subagents.activeSubagentLabel || 'subagent')}`
       : (pulseActive ? 'Agent turn executing / consuming tokens' : 'Idle');
 
     return html`
@@ -85,11 +129,13 @@
   function renderSessionOptions(sessions = [], session = {}, pinnedId = '') {
     const isSubagentPinned = Boolean(session?.isSubagent && pinnedId && !sessions.some((s) => s.cascadeId === pinnedId));
     const activeTitle = (isSubagentPinned ? session?.rootTitle || session?.parentTitle : session?.title) || 'Current conversation';
-    return [
-      html`<option value="" ${!pinnedId ? 'selected' : ''}>Auto-sync: ${esc(activeTitle)}</option>`,
-      ...(isSubagentPinned ? [html`<option value="${esc(pinnedId)}" selected>Subagent: ${esc(session.title || pinnedId)}</option>`] : []),
-      ...sessions.map((s) => html`<option value="${esc(s.cascadeId)}" ${pinnedId === s.cascadeId ? 'selected' : ''}>Pin: ${esc(s.title)}</option>`),
-    ].join('');
+    return rawHtml(
+      [
+        html`<option value="" ${!pinnedId ? 'selected' : ''}>Auto-sync: ${esc(activeTitle)}</option>`,
+        ...(isSubagentPinned ? [html`<option value="${esc(pinnedId)}" selected>Subagent: ${esc(session.title || pinnedId)}</option>`] : []),
+        ...sessions.map((s) => html`<option value="${esc(s.cascadeId)}" ${pinnedId === s.cascadeId ? 'selected' : ''}>Pin: ${esc(s.title)}</option>`),
+      ].join(''),
+    );
   }
 
   function renderTelemetryPillText(context = {}, turnInsights = {}) {
@@ -110,10 +156,10 @@
     const respPct = Math.max(0, 100 - thinkPct);
     const turnEst = perf.thinkingEstimated ? ' (est.)' : '';
     const sessionEst = perf.sessionThinkingEstimated ? ' (est.)' : '';
-    const outThinkTooltip = [
+    const outThinkTooltip = (cm.rawHtml || String)([
       `Turn: ${esc(perf.formattedResponse || '0')} resp · ${esc(perf.formattedThinking || '0')} think (${esc(perf.thinkingRatioPct || 0)}% reasoning)${turnEst}`,
       `Session: ${esc(perf.formattedSessionResponse || '0')} resp · ${esc(perf.formattedSessionThinking || '0')} think (${esc(perf.sessionThinkingRatioPct || 0)}% reasoning)${sessionEst}`,
-    ].join('\n');
+    ].join('\n'));
 
     return html`
       <div class="perf-strip">
@@ -189,8 +235,9 @@
 
     const aiCredits = planUsage.aiCredits || {};
     const overageOn = Boolean(aiCredits.useAiCredits);
+    const lastTurnSuffix = aiCredits.lastTurnUsed ? html` (last turn -${esc(aiCredits.lastTurnUsed)})` : '';
     const sessionBurnText = aiCredits.sessionUsed > 0
-      ? `Session: -${esc(aiCredits.formattedSessionUsed)} (${aiCredits.lastTurnUsed ? `last turn -${esc(aiCredits.lastTurnUsed)}` : ''})`
+      ? html`Session: -${esc(aiCredits.formattedSessionUsed)}${lastTurnSuffix}`
       : 'No AI credits used in this session';
 
     return html`
@@ -249,7 +296,7 @@
     const rowsHtml = categories.map((c) => {
       const isFree = c.id === 'freeSpace';
       const isDeferred = !c.inActiveContext;
-      const dotStyle = isFree ? '' : `style="background:${esc(c.color)}"`;
+      const dotStyle = isFree ? '' : (cm.rawHtml ? cm.rawHtml(`style="background:${esc(c.color)}"`) : `style="background:${esc(c.color)}"`);
       const labelClass = isDeferred && !isFree ? 'row-label muted' : 'row-label';
       const riskCls = isFree && (risk === 'warn' || risk === 'danger') ? ` ${risk}` : '';
       return html`
@@ -269,7 +316,7 @@
       <div class="segmented-bar">${barSegmentsHtml}</div>
       <div class="breakdown-list">
         ${rowsHtml}
-        ${cm.renderSubagentsDrawer ? cm.renderSubagentsDrawer(subagents, Boolean(uiState.subagentsExpanded), session?.cascadeId || '') : ''}
+        ${cm.renderSubagentsDrawer ? cm.renderSubagentsDrawer(subagents, Boolean(uiState.subagentsExpanded), session?.cascadeId || '', Boolean(uiState.subagentsShowAll)) : ''}
         ${cm.renderMcpTreeDrawer ? cm.renderMcpTreeDrawer(mcp, Boolean(uiState.mcpExpanded)) : ''}
         ${cm.renderCompactionsDrawer ? cm.renderCompactionsDrawer(compaction, Boolean(uiState.compactionsExpanded), uiState.openCheckpoints) : ''}
         ${cm.renderEffortFitDrawer ? cm.renderEffortFitDrawer(advisor, Boolean(uiState.effortFitExpanded)) : ''}
@@ -282,11 +329,12 @@
   }
 
   Object.assign(cm, {
+    DRAWER_TOGGLES,
     ensureShellMounted,
     renderTopHeaderAndTabs,
     renderSessionOptions,
     renderTelemetryPillText,
     renderContextTab,
-    wireContextInteractiveElements: () => {},
+    handleContextClick,
   });
 })();

@@ -109,16 +109,16 @@
     const checkpoints = Array.isArray(compaction.checkpoints) ? compaction.checkpoints : [];
     const latestCp = checkpoints[0] || null;
     const latestDropText = latestCp && latestCp.beforeTokens > 0
-      ? `Last: ${esc(latestCp.formattedBefore)} → ${esc(latestCp.formattedAfter)}`
-      : `${esc(compaction.count)} total`;
+      ? html`Last: ${esc(latestCp.formattedBefore)} → ${esc(latestCp.formattedAfter)}`
+      : html`${esc(compaction.count)} total`;
     const cardsHtml = compactionsExpanded
       ? html`
         <div class="culprits-drawer">
           ${checkpoints.map((cp) => {
             const isOpen = openCheckpoints instanceof Set && openCheckpoints.has(String(cp.index));
             const deltaText = cp.beforeTokens > 0
-              ? `${esc(cp.formattedBefore)} → ${esc(cp.formattedAfter)} (-${esc(cp.formattedSaved)})`
-              : `Step @${esc(cp.stepIndex)}`;
+              ? html`${esc(cp.formattedBefore)} → ${esc(cp.formattedAfter)} (-${esc(cp.formattedSaved)})`
+              : html`Step @${esc(cp.stepIndex)}`;
             const detailsHtml = cp.summary
               ? html`
                 <details class="checkpoint-details" data-cp-index="${esc(cp.index)}" ${isOpen ? 'open' : ''}>
@@ -250,13 +250,14 @@
       ? ` (${((culprits.topStepsTokens / ceilingNum) * 100).toFixed(1)}%)`
       : '';
     const culpritsRightLabel = culprits.topStepsTokens > 0
-      ? `Top ${topSteps.length} steps: ${esc(culprits.formattedTopStepsTokens.replace(/\s*top\s+\d+$/i, ''))}${topStepsPct}`
+      ? html`Top ${topSteps.length} steps: ${esc(culprits.formattedTopStepsTokens.replace(/\s*top\s+\d+$/i, ''))}${topStepsPct}`
       : '';
     const stepsHtml = topSteps.length
       ? topSteps.map((st) => {
-        const subIdAttr = st.subagentId
+        const rawSubIdAttr = st.subagentId
           ? ` data-subagent-id="${esc(st.subagentId)}" title="Click to inspect subagent (${esc(st.subagentId)})"`
           : '';
+        const subIdAttr = rawSubIdAttr && cm.rawHtml ? cm.rawHtml(rawSubIdAttr) : rawSubIdAttr;
         return html`
           <div class="${st.subagentId ? 'fit-card subagent-culprit clickable' : 'fit-card'}" style="margin-bottom:5px"${subIdAttr}>
             <div class="fit-header">

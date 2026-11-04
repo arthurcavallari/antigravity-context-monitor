@@ -102,31 +102,51 @@
     if (document.body) document.body.style.fontFamily = 'var(--vscode-font-family)';
   }
 
-  const esc = (v) => {
-    if (window.AgyUI?.escHtml) return window.AgyUI.escHtml(v);
-    return String(v ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+  const trustedHtml = new Set();
+  const rawHtml = (str = '') => {
+    const s = String(str ?? '');
+    if (/[&<>"']/.test(s)) {
+      if (trustedHtml.has(s)) {
+        trustedHtml.delete(s);
+      } else if (trustedHtml.size >= 10000) {
+        trustedHtml.delete(trustedHtml.values().next().value);
+      }
+      trustedHtml.add(s);
+    }
+    return s;
   };
+  const escapeRaw = (v) => String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const esc = (v) => rawHtml(window.AgyUI?.escHtml ? window.AgyUI.escHtml(v) : escapeRaw(v));
   const formatBadgeLabel = (raw) => {
     if (window.AgyUI?.formatBadgeLabel) return window.AgyUI.formatBadgeLabel(raw);
     return String(raw || '').trim().replace(/^(?!pid\b)(.)(.*)/i, (_, a, b) => a.toUpperCase() + b.toLowerCase());
   };
-  const icon = (name, size = 14, cls = '') => {
-    if (window.AgyUI?.iconSvg) return window.AgyUI.iconSvg(name, size, cls);
-    return `<svg width="${size}" height="${size}" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="${ICONS[name] || ''}"/></svg>`;
-  };
+  const icon = (name, size = 14, cls = '') => rawHtml(
+    window.AgyUI?.iconSvg
+      ? window.AgyUI.iconSvg(name, size, cls)
+      : `<svg width="${size}" height="${size}" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="${ICONS[name] || ''}"/></svg>`,
+  );
   const toHtml = (node) => {
     if (Array.isArray(node)) return node.map(toHtml).join('');
-    if (node == null || typeof node !== 'object') return String(node ?? '');
-    return node.outerHTML ?? Array.from(node.childNodes || [], (c) => c.outerHTML ?? esc(c.textContent ?? '')).join('');
+    if (node == null || typeof node !== 'object') {
+      const s = String(node ?? '');
+      return trustedHtml.has(s) ? s : escapeRaw(s);
+    }
+    return node.outerHTML ?? Array.from(node.childNodes || [], (c) => c.outerHTML ?? escapeRaw(c.textContent ?? '')).join('');
   };
-  const html = (s, ...v) => s.reduce((acc, p, i) => acc + p + (i < v.length ? toHtml(v[i] ?? '') : ''), '');
+  const html = (s, ...v) => rawHtml(s.reduce((acc, p, i) => acc + p + (i < v.length ? toHtml(v[i] ?? '') : ''), ''));
   const setHtml = (target, content) => {
-    if (target) target.innerHTML = toHtml(content ?? '');
+    if (!target) return;
+    if (Array.isArray(content)) {
+      target.innerHTML = content.map(toHtml).join('');
+      return;
+    }
+    target.innerHTML = typeof content === 'string' ? content : toHtml(content ?? '');
   };
 
   async function apiCall(path, body = {}) {
@@ -198,6 +218,132 @@
     if (window.AgyUI?.readHostVisibility) return window.AgyUI.readHostVisibility(d);
     return d?.type === VISIBILITY_MESSAGE_TYPE && typeof d?.payload?.visible === 'boolean' ? d.payload.visible : null;
   };
+  function createVisibilityPoller(optionsOrFn = {}, maybeOpts = {}) {
+    const opts = typeof optionsOrFn === 'function' ? { ...maybeOpts, onPoll: optionsOrFn } : optionsOrFn || {};
+    if (window.AgyShell?.createVisibilityPoller) {
+      return window.AgyShell.createVisibilityPoller({ autoStart: opts.autoStart !== false, ...opts });
+    }
+    let pollTimer = 0;
+    let hostVisible = true;
+    let inViewport = true;
+    let running = false;
+    let inFlight = null;
+    let pendingWake = false;
+    let observer = null;
+    let attached = false;
+    const isVisible = () => hostVisible && inViewport && !(typeof document !== 'undefined' && document.hidden);
+    const clear = () => {
+      if (pollTimer && typeof clearTimeout === 'function') clearTimeout(pollTimer);
+      pollTimer = 0;
+    };
+    const schedule = () => {
+      clear();
+      if (!running || !isVisible() || typeof setTimeout !== 'function') return;
+      pollTimer = setTimeout(tick, opts.getIntervalMs ? opts.getIntervalMs() : POLL_IDLE_MS);
+    };
+    const runPoll = () => {
+      pendingWake = false;
+      let res;
+      try {
+        res = opts.onPoll?.();
+      } catch {
+        schedule();
+        return res;
+      }
+      if (res && typeof res.then === 'function') {
+        const done = () => {
+          if (inFlight === p) inFlight = null;
+          if (pendingWake && running && isVisible()) {
+            pendingWake = false;
+            tick();
+          } else {
+            schedule();
+          }
+        };
+        const p = res.then(done, done);
+        inFlight = p;
+        return p;
+      }
+      schedule();
+      return res;
+    };
+    const tick = () => {
+      pollTimer = 0;
+      if (!running || !isVisible() || inFlight) return;
+      runPoll();
+    };
+    const sync = () => {
+      clear();
+      if (!running) return;
+      if (inFlight) {
+        if (isVisible()) pendingWake = true;
+        return;
+      }
+      if (isVisible()) tick();
+    };
+    const triggerNow = () => {
+      clear();
+      if (inFlight) {
+        if (running && isVisible()) pendingWake = true;
+        return inFlight;
+      }
+      return runPoll();
+    };
+    const onMessage = (e) => {
+      if (!running || e?.source !== window.parent) return;
+      opts.onHostMessage?.(e);
+      const visible = readHostVisibility(e.data);
+      if (visible !== null && visible !== hostVisible) {
+        hostVisible = visible;
+        sync();
+      }
+    };
+    const attach = () => {
+      if (attached) return;
+      attached = true;
+      if (typeof IntersectionObserver === 'function' && typeof document !== 'undefined' && document.documentElement && !observer) {
+        observer = new IntersectionObserver((entries) => {
+          const last = entries?.[entries.length - 1];
+          if (!last || typeof last.isIntersecting !== 'boolean') return;
+          if (last.isIntersecting !== inViewport) {
+            inViewport = last.isIntersecting;
+            sync();
+          }
+        });
+        observer.observe(document.documentElement);
+      }
+      if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        window.addEventListener('message', onMessage);
+      }
+      if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+        document.addEventListener('visibilitychange', sync);
+      }
+    };
+    const start = () => {
+      if (running) return;
+      running = true;
+      attach();
+      if (opts.immediate === false) schedule();
+      else sync();
+    };
+    const stop = () => {
+      running = false;
+      pendingWake = false;
+      clear();
+      if (!attached) return;
+      attached = false;
+      observer?.disconnect?.();
+      observer = null;
+      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener('message', onMessage);
+      }
+      if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+        document.removeEventListener('visibilitychange', sync);
+      }
+    };
+    if (opts.autoStart !== false) start();
+    return { start, sync, stop, triggerNow, isVisible };
+  }
   Object.assign(cm, {
     ICONS,
     POLL_FAST_MS,
@@ -205,13 +351,10 @@
     nextPollDelayMs,
     VISIBILITY_MESSAGE_TYPE,
     readHostVisibility,
-    createVisibilityPoller: (opts = {}) => window.AgyShell?.createVisibilityPoller?.(opts) || {
-      sync() {},
-      stop() {},
-      isVisible: () => true,
-    },
+    createVisibilityPoller,
     applyTheme,
     deriveCmVarsFromEditor,
+    rawHtml,
     html,
     setHtml,
     toHtml,

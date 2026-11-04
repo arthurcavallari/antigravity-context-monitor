@@ -66,11 +66,11 @@
             <span class="quota-meta">~${esc(skillInj.estimatedTokens ?? 0)} tokens (${esc(skillInj.totalInjectedBytes ?? 0)} B)</span>
           </div>
           <div class="mcp-card-meta">
-            ${injList.map((it) => {
+            ${(cm.rawHtml || String)(injList.map((it) => {
               const injected = (it.injectedSkills || []).map(esc).join(', ') || 'none';
               const dropped = [...(it.droppedByCap || []), ...(it.droppedByBudget || [])].map(esc);
               return `#${esc(it.stepIndex)} ${esc(it.hookEvent)}: ${injected}${dropped.length ? ` (dropped: ${dropped.join(', ')})` : ''}`;
-            }).join(' · ')}
+            }).join(' · '))}
           </div>
         </div>
       `
@@ -122,11 +122,15 @@
     if (srv) {
       Object.assign(srv, { enabled: next, statusBadge: next ? 'READY' : 'OFF', isError: false });
       btn.setAttribute('data-enabled', next ? '1' : '0');
-      btn.setAttribute('aria-checked', String(next));
-      const sw = btn.querySelector('.agy-switch');
-      if (sw) {
-        sw.checked = next;
-        sw.classList?.toggle?.('on', next);
+      if (window.AgyUI?.syncSwitchState) {
+        window.AgyUI.syncSwitchState(btn, next);
+      } else {
+        btn.setAttribute('aria-checked', String(next));
+        const sw = btn.querySelector('.agy-switch');
+        if (sw) {
+          sw.checked = next;
+          sw.classList?.toggle?.('on', next);
+        }
       }
       const row = btn.closest('.mcp-card-row');
       row?.classList.toggle('disabled', !next);
@@ -151,8 +155,16 @@
     if (overageBtn && state.latestData?.planUsage?.aiCredits) {
       const next = !state.latestData.planUsage.aiCredits.useAiCredits;
       state.latestData.planUsage.aiCredits.useAiCredits = next;
-      overageBtn.setAttribute('aria-checked', String(next));
-      overageBtn.querySelector('.agy-switch')?.classList.toggle('on', next);
+      if (window.AgyUI?.syncSwitchState) {
+        window.AgyUI.syncSwitchState(overageBtn, next);
+      } else {
+        overageBtn.setAttribute('aria-checked', String(next));
+        const sw = overageBtn.querySelector('.agy-switch');
+        if (sw) {
+          sw.checked = next;
+          sw.classList?.toggle?.('on', next);
+        }
+      }
       state.lastTabHtml = computeTabBodyHtml();
       try {
         await apiCall('/api/ai-credits/toggle', { enabled: next });
@@ -189,6 +201,5 @@
     renderMcpBudgetsTab,
     handleMcpToggle,
     handleMcpAction,
-    wireMcpInteractiveElements: () => {},
   });
 })();

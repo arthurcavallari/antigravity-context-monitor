@@ -18,7 +18,7 @@
     mergeIncomingLogs,
     syncDiagnosticsDom,
     nextPollDelayMs,
-    readHostVisibility,
+    createVisibilityPoller,
   } = window.ContextMonitor;
 
   const PULSE_HOLD_MS = 2500;
@@ -32,6 +32,7 @@
     hostCascadeId: window.sidecar?.conversationId || new URLSearchParams(window.location.search).get('conversationId') || (isFramed ? '_new' : ''),
     workspaceUris: [],
     subagentsExpanded: false,
+    subagentsShowAll: false,
     mcpExpanded: false,
     compactionsExpanded: false,
     effortFitExpanded: false,
@@ -47,6 +48,7 @@
     isRefreshing: false,
     lastTotalTokens: null,
     lastCascadeId: '',
+    lastRootCascadeId: '',
     lastTokenChangeAt: 0,
     lastHeaderHtml: '',
     lastTabHtml: '',
@@ -59,13 +61,9 @@
   };
   let telemetrySeq = 0;
   let telemetryInFlight = false;
-  let pollTimer = 0;
   let diagInFlight = null;
   let pendingConfirm = { key: '', until: 0 };
-  let hostVisible = true;
-  let inViewport = true;
   let lastSeenMutationAt = 0;
-  const isPaneVisible = () => hostVisible && inViewport && !document.hidden;
   const isPinnedToSubagent = () => Boolean(
     state.pinnedCascadeId && (
       state.latestData?.session?.isSubagent ||
@@ -130,8 +128,14 @@
       const isPulseActive = Boolean(state.latestData.isExecuting || Date.now() - state.lastTokenChangeAt < PULSE_HOLD_MS);
       const nextHdr = renderTopHeaderAndTabs(state.latestData, state, isPulseActive);
       if (nextHdr !== state.lastHeaderHtml) {
+        const restoreTabFocus = Boolean(
+          document.activeElement && headerSlot.querySelector?.('#tab-nav')?.contains?.(document.activeElement),
+        );
         setHtml(headerSlot, nextHdr);
         state.lastHeaderHtml = nextHdr;
+        if (restoreTabFocus) {
+          headerSlot.querySelector?.('#tab-nav .agy-toggle-item.active')?.focus?.();
+        }
       }
     }
     if (state.activeTab === 'diagnostics') {
@@ -204,8 +208,12 @@
       if (reqId !== telemetrySeq) return;
       if (data?.theme) applyTheme(data.theme);
       const activeId = data?.session?.cascadeId || '';
+      const rootId = data?.subagents?.rootCascadeId || data?.session?.rootConversationId || activeId;
       const totalUsed = data?.context?.totalUsedTokens ?? 0;
       if (state.lastCascadeId && state.lastCascadeId !== activeId) state.openCheckpoints.clear();
+      if (state.lastRootCascadeId && rootId && state.lastRootCascadeId !== rootId) {
+        state.subagentsShowAll = false;
+      }
       if (state.lastTotalTokens !== null && state.lastCascadeId === activeId && totalUsed !== state.lastTotalTokens) {
         state.lastTokenChangeAt = Date.now();
       }
@@ -213,6 +221,7 @@
         state.autoRootCascadeId = activeId;
       }
       state.lastCascadeId = activeId;
+      if (rootId) state.lastRootCascadeId = rootId;
       syncActiveConvId(activeId);
       state.lastTotalTokens = totalUsed;
       state.latestData = data;
@@ -237,16 +246,6 @@
     if (idx) state.openCheckpoints[det.open ? 'add' : 'delete'](idx);
   }, true);
 
-  if (typeof IntersectionObserver === 'function') {
-    new IntersectionObserver((entries) => {
-      const next = entries[entries.length - 1].isIntersecting;
-      if (next !== inViewport) {
-        inViewport = next;
-        syncPolling();
-      }
-    }).observe(document.documentElement);
-  }
-
   window.sidecar?.onWorkspaceChange?.((uris) => {
     const next = Array.isArray(uris) ? uris : [];
     if (JSON.stringify(next) === JSON.stringify(state.workspaceUris)) return;
@@ -259,47 +258,26 @@
     refreshTelemetry(false, true);
   });
 
-  window.addEventListener('message', (e) => {
-    if (e.source !== window.parent) return;
-    if (e.data?.type === 'theme-change' && e.data?.payload) applyTheme(e.data.payload);
-    if (e.data?.type === 'conversation-change' && typeof e.data?.payload?.conversationId === 'string') {
-      if (e.data.payload.conversationId !== state.hostCascadeId) {
-        state.hostCascadeId = e.data.payload.conversationId;
-        state.autoRootCascadeId = '';
-        if (isPinnedToSubagent()) state.pinnedCascadeId = '';
-        syncActiveConvId();
-        refreshTelemetry(false, true);
-      }
-    }
-    const visible = readHostVisibility(e.data);
-    if (visible !== null && visible !== hostVisible) {
-      hostVisible = visible;
-      syncPolling();
-    }
-  });
-
-  function schedulePoll() {
-    clearTimeout(pollTimer);
-    pollTimer = 0;
-    if (!isPaneVisible()) return;
-    const delay = nextPollDelayMs({
+  const poller = createVisibilityPoller({
+    autoStart: true,
+    getIntervalMs: () => nextPollDelayMs({
       isExecuting: Boolean(state.latestData?.isExecuting),
       activeTab: state.activeTab,
-    });
-    pollTimer = setTimeout(pollTick, delay);
-  }
-
-  async function pollTick() {
-    pollTimer = 0;
-    await Promise.all([refreshTelemetry(false), state.activeTab === 'diagnostics' ? refreshDiagnostics() : null]);
-    schedulePoll();
-  }
-
-  function syncPolling() {
-    clearTimeout(pollTimer);
-    pollTimer = 0;
-    if (isPaneVisible()) pollTick();
-  }
+    }),
+    onPoll: () => Promise.all([refreshTelemetry(false), state.activeTab === 'diagnostics' ? refreshDiagnostics() : null]),
+    onHostMessage: (e) => {
+      if (e.data?.type === 'theme-change' && e.data?.payload) applyTheme(e.data.payload);
+      if (e.data?.type === 'conversation-change' && typeof e.data?.payload?.conversationId === 'string') {
+        if (e.data.payload.conversationId !== state.hostCascadeId) {
+          state.hostCascadeId = e.data.payload.conversationId;
+          state.autoRootCascadeId = '';
+          if (isPinnedToSubagent()) state.pinnedCascadeId = '';
+          syncActiveConvId();
+          refreshTelemetry(false, true);
+        }
+      }
+    },
+  });
 
   window.AgyShell?.subscribeStateSyncEvents?.({
     url: '/api/events',
@@ -307,13 +285,10 @@
     onStateEvent: (st) => {
       if (st?.lastMutationAt && st.lastMutationAt > lastSeenMutationAt) {
         lastSeenMutationAt = st.lastMutationAt;
-        if (!isPaneVisible()) return;
+        if (!poller.isVisible()) return;
         refreshTelemetry(false, true);
         if (state.activeTab === 'diagnostics') refreshDiagnostics();
       }
     },
   });
-
-  document.addEventListener('visibilitychange', syncPolling);
-  syncPolling();
 })();

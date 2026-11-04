@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { parseHTML } from 'linkedom';
 
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui');
 const UI_SCRIPTS = [
@@ -64,9 +65,15 @@ function bootApp() {
       this.target = target;
     }
   }
+  const { document: domDoc, HTMLElement, Element, customElements, CustomEvent } = parseHTML(
+    '<!doctype html><html><body><div id="app"></div></body></html>'
+  );
   const document = {
     hidden: false,
-    getElementById: () => null,
+    getElementById: (id) => domDoc.getElementById(id),
+    createElement: (tag) => domDoc.createElement(tag),
+    querySelector: (sel) => domDoc.querySelector(sel),
+    querySelectorAll: (sel) => domDoc.querySelectorAll(sel),
     addEventListener: (type, fn) => (docListeners[type] = fn),
     documentElement: { style: { setProperty() {}, removeProperty() {} }, dataset: {} },
   };
@@ -78,6 +85,10 @@ function bootApp() {
   const ctx = vm.createContext({
     window,
     document,
+    HTMLElement,
+    Element,
+    customElements,
+    CustomEvent,
     URLSearchParams,
     IntersectionObserver,
     setTimeout: timers.setTimeout,
@@ -123,6 +134,7 @@ test('app.js polls adaptively and pauses while Hangar hides the frame', async ()
   const { POLL_FAST_MS, POLL_IDLE_MS } = app.ui;
   await app.timers.advance(0);
   assert.equal(app.host.telemetryCalls, 1);
+  assert.ok(app.document.getElementById('card-tab-slot'), 'real linkedom #app mounted #card-tab-slot during poll');
 
   await app.timers.advance(POLL_IDLE_MS - 1);
   assert.equal(app.host.telemetryCalls, 1);
@@ -161,6 +173,7 @@ test('app.js pauses when a host hides the frame with CSS without telling it', as
   const { POLL_IDLE_MS } = app.ui;
   await app.timers.advance(0);
   assert.equal(app.host.telemetryCalls, 1);
+  assert.ok(app.document.getElementById('card-tab-slot'), 'real linkedom #app mounted #card-tab-slot during poll');
 
   app.setInViewport(false);
   await app.timers.advance(10 * POLL_IDLE_MS);

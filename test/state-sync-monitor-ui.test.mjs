@@ -6,9 +6,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { parseHTML } from 'linkedom';
 
 import { app, createMonitorStateSync } from '../server.mjs';
 import { MUTATION_ROUTES, createSidecarAppInstance } from '../lib/constants.mjs';
+import { checkMonitorAuth } from '../lib/mcp-tools.mjs';
 import { resolveHostTheme } from 'antigravity-sidecar-kit/theme';
 
 const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -49,10 +51,16 @@ test('UI preserves 88% contrast across repeated polls with AgyShell loaded, supp
     }
   }
 
+  const { document: domDoc, HTMLElement, Element, customElements, CustomEvent } = parseHTML(
+    '<!doctype html><html><body><div id="app"></div></body></html>'
+  );
   const document = {
     readyState: 'loading',
     hidden: false,
-    getElementById: () => null,
+    getElementById: (id) => domDoc.getElementById(id),
+    createElement: (tag) => domDoc.createElement(tag),
+    querySelector: (sel) => domDoc.querySelector(sel),
+    querySelectorAll: (sel) => domDoc.querySelectorAll(sel),
     addEventListener: (type, fn) => (docListeners[type] = fn),
     documentElement: {
       dataset: {},
@@ -76,6 +84,10 @@ test('UI preserves 88% contrast across repeated polls with AgyShell loaded, supp
   const ctx = vm.createContext({
     window,
     document,
+    HTMLElement,
+    Element,
+    customElements,
+    CustomEvent,
     URLSearchParams,
     fetch: window.fetch,
     setTimeout: (fn, ms) => {
@@ -116,6 +128,8 @@ test('UI preserves 88% contrast across repeated polls with AgyShell loaded, supp
   assert.equal(telemetryRefreshCount, beforeCount);
   createdEventSources[0].emitState({ state: { lastMutationAt: 123456, lastAction: 'mcp-toggle' } });
   assert.equal(telemetryRefreshCount, beforeCount + 1);
+  await new Promise((r) => setImmediate(r));
+  assert.ok(document.getElementById('card-tab-slot'), 'real linkedom #app rendered #card-tab-slot on SSE refresh');
 
   document.hidden = true;
   createdEventSources[0].emitState({ state: { lastMutationAt: 234567, lastAction: 'mcp-refresh' } });
@@ -180,7 +194,22 @@ test('CM-AUD-01 & CM-AUD-02: action mutations and direct POST routes enforce tok
     );
     assert.equal(authRes.ok, true);
     assert.equal(authRes.version, v0 + 1);
+    const badActionRes = await sync.handleMutate(
+      { action: 'toString', payload: {} },
+      { headers: { origin: 'http://127.0.0.1:52320', 'x-sidecar-token': 'secret-cm-tok-99' } }
+    );
+    assert.equal(badActionRes.ok, false);
+    assert.equal(badActionRes.status, 400);
+    const urlQueryAuthRes = await sync.handleMutate(
+      { action: 'mcp-refresh', payload: {} },
+      { headers: { origin: 'http://127.0.0.1:52320' }, url: '/api/mutate?token=secret-cm-tok-99' }
+    );
+    assert.equal(urlQueryAuthRes.ok, true);
     assert.equal((await app.apis.get('/api/mcp/refresh')({}, { headers: {} })).status, 401);
+    assert.equal((await app.apis.get('/api/telemetry')({}, { headers: {} })).status, 401);
+    assert.equal((await app.apis.get('/api/telemetry')({}, { headers: { origin: 'https://evil.example', 'x-sidecar-token': 'secret-cm-tok-99' } })).status, 403);
+    assert.equal((await app.apis.get('/api/diagnostics')({}, { headers: {} })).status, 401);
+    assert.equal((await app.apis.get('/api/diagnostics')({}, { headers: { origin: 'https://evil.example', 'x-sidecar-token': 'secret-cm-tok-99' } })).status, 403);
 
     const uiCalls = [];
     const uiWin = {
@@ -198,6 +227,16 @@ test('CM-AUD-01 & CM-AUD-02: action mutations and direct POST routes enforce tok
     assert.equal(uiCalls[0].headers['X-Sidecar-Token'], 'secret-cm-tok-99');
     assert.equal(uiCalls[0].body.conversationId, '_new');
     assert.equal(uiCalls[0].body.workspace, 'C:/repo');
+    assert.equal(
+      uiWin.ContextMonitor.html`<div>${'<script>evil()</script>'}<span>${uiWin.ContextMonitor.esc('<b>ok</b>')}</span></div>`,
+      '<div>&lt;script&gt;evil()&lt;/script&gt;<span>&lt;b&gt;ok&lt;/b&gt;</span></div>'
+    );
+    sync.setState({ extraKey: 'keep-me' });
+    await sync.mutate('mcp-refresh', {});
+    assert.equal(sync.getState().extraKey, 'keep-me', 'wrapMonitorStateSync.mutate must preserve top-level state keys outside result');
+    assert.equal(checkMonitorAuth({ checkAuth: () => null }, {}, {}), null, 'checkMonitorAuth must work on plain mock sync objects');
+    const fbPoller = uiWin.ContextMonitor.createVisibilityPoller(() => 'sync-poll-result', { autoStart: false });
+    assert.equal(fbPoller.triggerNow(), 'sync-poll-result', 'fallback createVisibilityPoller.triggerNow must execute onPoll even when stopped');
     sync.stop();
 
     // Verify SidecarApp 1-arg handler(data) invocation over real HTTP propagates req headers/query to checkAuth & StateSync
@@ -251,6 +290,26 @@ test('CM-AUD-01 & CM-AUD-02: action mutations and direct POST routes enforce tok
       }).then((r) => r.json());
       assert.equal(badToggle.status, 401);
       assert.equal(badToggle.error, 'Unauthorized');
+
+      // Verify 1-arg sync.handleMutate(data) inside runWithRequestContext resolves headers/query via checkMonitorAuth
+      const { runWithRequestContext } = await import('antigravity-sidecar-kit/state-sync');
+      const oneArgActionRes = await runWithRequestContext(
+        { headers: { origin: 'http://127.0.0.1:52320', 'x-sidecar-token': 'secret-cm-tok-99' } },
+        () => sdkSync.handleMutate({ action: 'mcp-toggle', payload: { serverName: 'srv-1', enabled: true } })
+      );
+      assert.equal(oneArgActionRes.ok, true);
+      assert.equal(oneArgActionRes.result.serverName, 'srv-1');
+
+      // Verify rawHtml refreshes LRU order for reused fragments so they are not evicted after 2,000 unique fragments
+      const hotBadge = uiWin.ContextMonitor.rawHtml('<span class="hot-badge">ACTIVE</span>');
+      for (let i = 0; i < 2500; i++) {
+        if (i % 500 === 0) uiWin.ContextMonitor.rawHtml('<span class="hot-badge">ACTIVE</span>');
+        uiWin.ContextMonitor.rawHtml(`<i>frag-${i}</i>`);
+      }
+      assert.equal(
+        String(uiWin.ContextMonitor.html`<div>${hotBadge}</div>`),
+        '<div><span class="hot-badge">ACTIVE</span></div>'
+      );
     } finally {
       sdkSync.stop();
       await new Promise((r) => httpSrv.close(r));
