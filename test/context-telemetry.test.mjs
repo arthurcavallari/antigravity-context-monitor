@@ -647,6 +647,22 @@ test('collectSubagentTree and selectActiveTrajectory resolve L1/L2 hierarchy, mo
           },
         },
       },
+      'sub-l1-c': {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        stepCount: 4,
+        createdTime: '2026-11-02T10:03:00Z',
+        lastModifiedTime: '2026-11-02T10:03:20Z',
+        trajectoryMetadata: {
+          parentConversationId: 'root-conv',
+          rootConversationId: 'root-conv',
+          nestingDepth: 1,
+          subagentSpec: {
+            typeName: 'research',
+            role: 'Docs Checker',
+            model: 'MODEL_PLACEHOLDER_M81',
+          },
+        },
+      },
       'sub-l2-worker': {
         status: 'CASCADE_RUN_STATUS_RUNNING',
         stepCount: 6,
@@ -688,15 +704,15 @@ test('collectSubagentTree and selectActiveTrajectory resolve L1/L2 hierarchy, mo
   assert.equal(formatSubagentTitle(trajectoriesResponse.trajectorySummaries['sub-l1-a'], 'sub-l1-a'), 'Architecture Coordinator (argon-840k)');
 
   const tree = collectSubagentTree(trajectoriesResponse, 'root-conv', 'root-conv', modelConfigData, nowMs);
-  assert.equal(tree.totalCount, 3);
+  assert.equal(tree.totalCount, 4);
   assert.equal(tree.runningCount, 1);
-  assert.equal(tree.totalSteps, 28);
+  assert.equal(tree.totalSteps, 32);
   assert.equal(tree.activeSubagentLabel, 'AST Scanner (research)');
 
-  // Topological + chronological order: sub-l1-a (10:01:00), then its L2 child sub-l2-worker, then sub-l1-b (10:02:00)
+  // Active L1 subtree first (sub-l1-a + running sub-l2-worker), then completed L1s newest-first (sub-l1-c @ 10:03, sub-l1-b @ 10:02)
   assert.deepEqual(
     tree.items.map((x) => x.cascadeId),
-    ['sub-l1-a', 'sub-l2-worker', 'sub-l1-b']
+    ['sub-l1-a', 'sub-l2-worker', 'sub-l1-c', 'sub-l1-b']
   );
   assert.equal(tree.items[0].nestingDepth, 1);
   assert.equal(tree.items[0].modelBadge, 'Gemini 4 Argon (High)');
@@ -710,11 +726,14 @@ test('collectSubagentTree and selectActiveTrajectory resolve L1/L2 hierarchy, mo
   assert.equal(tree.items[1].statusBadge, 'Running');
   assert.equal(tree.items[1].durationFormatted, '3m 30s'); // live elapsed to nowMs (10:05:00 - 10:01:30)
 
-  assert.equal(tree.items[2].nestingDepth, 1);
-  assert.equal(tree.items[2].modelBadge, 'Gemini 3.8 Flash (Low)');
-  assert.equal(tree.items[2].isError, true);
-  assert.equal(tree.items[2].statusBadge, 'Error');
-  assert.equal(tree.items[2].durationFormatted, '45s');
+  assert.equal(tree.items[2].cascadeId, 'sub-l1-c');
+  assert.equal(tree.items[2].statusBadge, 'Done');
+
+  assert.equal(tree.items[3].nestingDepth, 1);
+  assert.equal(tree.items[3].modelBadge, 'Gemini 3.8 Flash (Low)');
+  assert.equal(tree.items[3].isError, true);
+  assert.equal(tree.items[3].statusBadge, 'Error');
+  assert.equal(tree.items[3].durationFormatted, '45s');
 
   // Inspecting L2 subagent populates parent/root breadcrumb fields and keeps subagents anchored to root-conv
   const subSelected = selectActiveTrajectory(trajectoriesResponse, {
@@ -733,7 +752,7 @@ test('collectSubagentTree and selectActiveTrajectory resolve L1/L2 hierarchy, mo
   assert.equal(subSelected.activeSession.typeName, 'research');
   assert.equal(subSelected.activeSession.role, 'AST Scanner');
   assert.equal(subSelected.subagents.rootCascadeId, 'root-conv');
-  assert.equal(subSelected.subagents.totalCount, 3);
+  assert.equal(subSelected.subagents.totalCount, 4);
   assert.equal(subSelected.subagents.items[1].isActive, true);
   // Root sessions list must never be polluted with subagent UUIDs
   assert.deepEqual(

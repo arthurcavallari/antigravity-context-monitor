@@ -2,15 +2,6 @@
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
   const { esc, icon, html } = cm;
-  const DRAWER_TOGGLES = {
-    '#model-badge-btn': 'modelProfileOpen',
-    '#context-help-btn': 'contextHelpOpen',
-    '#subagents-collapse-toggle': 'subagentsExpanded',
-    '#mcp-collapse-toggle': 'mcpExpanded',
-    '#compactions-collapse-toggle': 'compactionsExpanded',
-    '#effort-fit-collapse-toggle': 'effortFitExpanded',
-    '#culprits-collapse-toggle': 'culpritsExpanded',
-  };
 
   function renderSubagentStatusBadge(sa = {}) {
     const rawStatus = sa.statusBadge || (
@@ -100,14 +91,64 @@
     `;
   }
 
-  function renderSubagentsDrawer(subagents = {}, subagentsExpanded = false, activeCascadeId = '') {
+  const DEFAULT_IDLE_VISIBLE = 3;
+
+  function isSubagentRunning(sa = {}) {
+    return Boolean(sa?.isRunning || sa?.status === 'CASCADE_RUN_STATUS_RUNNING' || sa?.statusBadge === 'Running');
+  }
+
+  function selectDefaultVisibleSubagents(items = [], runningCount = 0, activeCascadeId = '') {
+    const indexById = new Map();
+    for (let i = 0; i < items.length; i++) {
+      if (items[i]?.cascadeId) indexById.set(items[i].cascadeId, i);
+    }
+    const visibleIdx = new Set();
+    const includeWithAncestors = (startIdx) => {
+      let currIdx = startIdx;
+      const seen = new Set();
+      while (currIdx >= 0 && currIdx < items.length && !seen.has(currIdx)) {
+        seen.add(currIdx);
+        visibleIdx.add(currIdx);
+        const curr = items[currIdx];
+        const depth = Math.max(1, Number(curr?.nestingDepth) || 1);
+        const pId = curr?.parentConversationId;
+        if (pId && indexById.has(pId)) {
+          currIdx = indexById.get(pId);
+          continue;
+        }
+        if (depth <= 1) break;
+        let prevParentIdx = -1;
+        for (let j = currIdx - 1; j >= 0; j--) {
+          if (Math.max(1, Number(items[j]?.nestingDepth) || 1) < depth) {
+            prevParentIdx = j;
+            break;
+          }
+        }
+        currIdx = prevParentIdx;
+      }
+    };
+
+    if (runningCount > 0) {
+      for (let i = 0; i < items.length; i++) {
+        if (isSubagentRunning(items[i])) includeWithAncestors(i);
+      }
+    }
+    if (visibleIdx.size === 0) {
+      const limit = Math.min(items.length, DEFAULT_IDLE_VISIBLE);
+      for (let i = 0; i < limit; i++) includeWithAncestors(i);
+    }
+    if (activeCascadeId && indexById.has(activeCascadeId)) {
+      includeWithAncestors(indexById.get(activeCascadeId));
+    }
+    return items.filter((_, idx) => visibleIdx.has(idx));
+  }
+
+  function renderSubagentsDrawer(subagents = {}, subagentsExpanded = false, activeCascadeId = '', subagentsShowAll = false) {
     const items = Array.isArray(subagents?.items) ? subagents.items : [];
     const totalCount = Number(subagents?.totalCount ?? items.length) || 0;
     if (totalCount === 0 || items.length === 0) return '';
     const chevronSvg = icon('chevron_right', 14);
-    const runningCount = Number(
-      subagents?.runningCount ?? items.filter((x) => x?.isRunning || x?.status === 'CASCADE_RUN_STATUS_RUNNING').length,
-    );
+    const runningCount = Number(subagents?.runningCount ?? items.filter(isSubagentRunning).length);
     const totalSteps = Number(subagents?.totalSteps ?? items.reduce((sum, x) => sum + (Number(x?.stepCount) || 0), 0));
     const parentTokensText = subagents?.formattedParentContextTokens || '';
     const rightParts = [];
@@ -123,9 +164,35 @@
         ></span>
       `
       : '';
-    const cardsHtml = subagentsExpanded
-      ? html`<div class="culprits-drawer">${items.map((sa) => renderSubagentRow(sa, activeCascadeId))}</div>`
-      : '';
+    let cardsHtml = '';
+    if (subagentsExpanded) {
+      const defaultSlice = selectDefaultVisibleSubagents(items, runningCount, activeCascadeId);
+      const hiddenCount = Math.max(0, items.length - defaultSlice.length);
+      const visibleItems = subagentsShowAll || hiddenCount === 0 ? items : defaultSlice;
+      const kind = runningCount > 0 ? 'completed' : 'earlier';
+      const noun = hiddenCount === 1 ? 'subagent' : 'subagents';
+      const moreBtnLabel = subagentsShowAll
+        ? `Hide ${hiddenCount} ${kind} ${noun} ▴`
+        : `Show ${hiddenCount} ${kind} ${noun} ▾`;
+      const moreBtnHtml = hiddenCount > 0
+        ? html`
+          <button
+            type="button"
+            id="subagents-show-more-btn"
+            class="agy-btn subagent-more-btn"
+            aria-expanded="${subagentsShowAll ? 'true' : 'false'}"
+          >
+            ${esc(moreBtnLabel)}
+          </button>
+        `
+        : '';
+      cardsHtml = html`
+        <div class="culprits-drawer">
+          ${visibleItems.map((sa) => renderSubagentRow(sa, activeCascadeId))}
+          ${moreBtnHtml}
+        </div>
+      `;
+    }
     return html`
       <div id="subagents-collapse-toggle" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect spawned L1/L2 subagents and click to view their context window">
         <div class="row-label muted">
@@ -133,104 +200,10 @@
           <span>Subagents (${esc(totalCount)})</span>
           ${runningDotHtml}
         </div>
-        <div class="row-tokens">${rightParts.join(' · ')}</div>
+        <div class="row-tokens">${cm.rawHtml ? cm.rawHtml(rightParts.join(' · ')) : rightParts.join(' · ')}</div>
       </div>
       ${cardsHtml}
     `;
-  }
-
-  function handleContextClick(target, state, resetPinTracking, refreshTelemetry, refreshDiagnostics, render) {
-    const tabBtn = target.closest('.agy-toggle-item');
-    if (tabBtn) {
-      state.activeTab = tabBtn.getAttribute('data-tab') || 'context';
-      state.lastTabHtml = '';
-      if (state.activeTab === 'diagnostics') refreshDiagnostics();
-      render();
-      return true;
-    }
-    for (const [selector, stateKey] of Object.entries(DRAWER_TOGGLES)) {
-      if (target.closest(selector)) {
-        state[stateKey] = !state[stateKey];
-        render();
-        return true;
-      }
-    }
-    const subagentTarget = target.closest('[data-subagent-id]');
-    if (subagentTarget) {
-      const targetId = subagentTarget.getAttribute('data-subagent-id') || '';
-      if (targetId && targetId !== state.latestData?.session?.cascadeId) {
-        const autoRootId = state.autoRootCascadeId || state.hostCascadeId || state.latestData?.sessions?.[0]?.cascadeId || '';
-        resetPinTracking(autoRootId && targetId === autoRootId ? '' : targetId);
-        refreshTelemetry(true);
-      }
-      return true;
-    }
-    if (target.closest('#refresh-btn')) {
-      refreshTelemetry(true);
-      if (state.activeTab === 'diagnostics') refreshDiagnostics();
-      return true;
-    }
-    return false;
-  }
-
-  async function handleDiagnosticsAction(target, e, state, confirmAction, runAction, refreshDiagnostics) {
-    const { syncDiagnosticsDom, handleFixWithAgent } = cm;
-    if (target.closest('#diag-log-toggle')) {
-      state.logTailingEnabled = !state.logTailingEnabled;
-      if (state.logTailingEnabled) {
-        state.logAutoScroll = true;
-      } else {
-        state.logBuffer = [];
-        state.renderedLogCount = 0;
-      }
-      refreshDiagnostics();
-      syncDiagnosticsDom(state);
-      return true;
-    }
-    if (target.closest('#diag-autoscroll-toggle')) {
-      state.logAutoScroll = !state.logAutoScroll;
-      if (state.logAutoScroll && state.logBuffer.length > 80) {
-        state.logBuffer = state.logBuffer.slice(-80);
-        state.renderedLogCount = 0;
-      }
-      syncDiagnosticsDom(state);
-      return true;
-    }
-    if (target.closest('#diag-clear-logs-btn')) {
-      state.logBuffer = [];
-      state.renderedLogCount = 0;
-      syncDiagnosticsDom(state);
-      return true;
-    }
-    const termKillBtn = target.closest('.term-kill-btn');
-    if (termKillBtn) {
-      const terminalId = termKillBtn.getAttribute('data-terminal-id');
-      const term = (state.diagData?.terminals || []).find((t) => t.terminalId === terminalId);
-      if (terminalId && confirmAction(`kill:${terminalId}`, `Terminate "${term?.title || 'terminal'}" (PID ${term?.pid || '?'})?`)) {
-        await runAction('Could not terminate terminal', '/api/terminals/close', { terminalId });
-        await refreshDiagnostics();
-      }
-      return true;
-    }
-    const fixBtn = target.closest('[data-action="fix-with-agent"]');
-    if (fixBtn) {
-      if (!e._cmFixHandled) {
-        e._cmFixHandled = true;
-        await handleFixWithAgent?.(fixBtn);
-      }
-      return true;
-    }
-    const sidecarRestartBtn = target.closest('.sidecar-restart-btn');
-    if (sidecarRestartBtn) {
-      const sidecarId = sidecarRestartBtn.getAttribute('data-sidecar-id');
-      const sidecar = (state.diagData?.sidecars || []).find((s) => s.sidecarId === sidecarId);
-      if (sidecarId && confirmAction(`restart:${sidecarId}`, `Restart ${sidecar?.displayName || sidecarId}?`)) {
-        await runAction('Could not restart sidecar', '/api/sidecars/restart', { sidecarId });
-        await refreshDiagnostics();
-      }
-      return true;
-    }
-    return false;
   }
 
   Object.assign(cm, {
@@ -238,8 +211,7 @@
     renderSubagentBanner,
     renderSubagentsBanner: renderSubagentBanner,
     renderSubagentRow,
+    selectDefaultVisibleSubagents,
     renderSubagentsDrawer,
-    handleContextClick,
-    handleDiagnosticsAction,
   });
 })();

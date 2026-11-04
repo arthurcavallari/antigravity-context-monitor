@@ -156,32 +156,15 @@ test('renderSubagentsDrawer hides when empty and renders L1/L2 hierarchy with XS
     formattedParentContextTokens: '4.8k',
     items: [
       {
-        cascadeId: 'sub-l1',
-        nestingDepth: 1,
-        typeName: 'argon-840k',
-        role: 'Coordinator',
-        title: `Coordinator ${HOSTILE}`,
-        modelBadge: `Gemini 4 Argon ${HOSTILE}`,
-        statusBadge: 'Done',
-        isRunning: false,
-        stepCount: 12,
-        durationFormatted: '2m 10s',
-        formattedParentContextTokens: '4.8k',
-        spawnStepRef: '#4',
-        promptPreview: `Prompt ${HOSTILE}`,
+        cascadeId: 'sub-l1', nestingDepth: 1, typeName: 'argon-840k', role: 'Coordinator',
+        title: `Coordinator ${HOSTILE}`, modelBadge: `Gemini 4 Argon ${HOSTILE}`, statusBadge: 'Done',
+        isRunning: false, stepCount: 12, durationFormatted: '2m 10s',
+        formattedParentContextTokens: '4.8k', spawnStepRef: '#4', promptPreview: `Prompt ${HOSTILE}`,
       },
       {
-        cascadeId: `sub-l2-${HOSTILE}`,
-        nestingDepth: 2,
-        typeName: 'research',
-        role: 'Worker',
-        title: 'Worker (research)',
-        modelBadge: 'Inherited',
-        statusBadge: 'Running',
-        isRunning: true,
-        stepCount: 7,
-        durationFormatted: '35s',
-        promptPreview: 'Check ast',
+        cascadeId: `sub-l2-${HOSTILE}`, nestingDepth: 2, typeName: 'research', role: 'Worker',
+        title: 'Worker (research)', modelBadge: 'Inherited', statusBadge: 'Running',
+        isRunning: true, stepCount: 7, durationFormatted: '35s', promptPreview: 'Check ast',
       },
     ],
   };
@@ -197,13 +180,42 @@ test('renderSubagentsDrawer hides when empty and renders L1/L2 hierarchy with XS
   assert.ok(expanded.includes('↳ L2'));
   assert.ok(expanded.includes('data-subagent-id="sub-l1"'));
   assert.ok(expanded.includes(`data-subagent-id="sub-l2-${HOSTILE_ESCAPED}"`));
-  assert.ok(expanded.includes('Viewing'));
-  assert.ok(expanded.includes('Inspect'));
-  assert.ok(expanded.includes('4.8k in parent'));
-  assert.ok(expanded.includes('(#4)'));
-  assert.ok(expanded.includes('class="agy-badge ready"'));
-  assert.ok(expanded.includes('class="agy-badge active"'));
+  assert.ok(expanded.includes('Viewing') && expanded.includes('Inspect'));
+  assert.ok(expanded.includes('4.8k in parent') && expanded.includes('(#4)'));
+  assert.ok(expanded.includes('class="agy-badge ready"') && expanded.includes('class="agy-badge active"'));
   assert.ok(expanded.includes('class="agy-badge-dot"'));
+  assert.ok(!expanded.includes('subagents-show-more-btn'), 'no toggle button when all items are in default visible slice');
+
+  // With runningCount > 0 and completed items, default slice hides completed items unless pinned/viewing
+  const mixed = {
+    totalCount: 4, runningCount: 1, totalSteps: 30,
+    items: [
+      ...subagents.items,
+      { cascadeId: 'done-1', nestingDepth: 1, title: 'Old 1', statusBadge: 'Done', isRunning: false, stepCount: 5 },
+      { cascadeId: 'done-2', nestingDepth: 1, title: 'Old 2', statusBadge: 'Done', isRunning: false, stepCount: 6 },
+    ],
+  };
+  const activeOnly = ui.renderSubagentsDrawer(mixed, true, 'root-1', false);
+  assert.ok(activeOnly.includes('data-subagent-id="sub-l1"'), 'L1 parent of running L2 worker stays visible');
+  assert.ok(!activeOnly.includes('data-subagent-id="done-1"') && !activeOnly.includes('data-subagent-id="done-2"'));
+  assert.ok(activeOnly.includes('Show 2 completed subagents ▾'));
+
+  const pinnedDone = ui.renderSubagentsDrawer(mixed, true, 'done-2', false);
+  assert.ok(pinnedDone.includes('data-subagent-id="done-2"'), 'currently viewed completed subagent stays visible');
+  assert.ok(pinnedDone.includes('Show 1 completed subagent ▾'));
+
+  const allShown = ui.renderSubagentsDrawer(mixed, true, 'root-1', true);
+  assert.ok(allShown.includes('data-subagent-id="done-1"') && allShown.includes('data-subagent-id="done-2"'));
+  assert.ok(allShown.includes('Hide 2 completed subagents ▴'));
+
+  // With runningCount === 0 and > 3 items, top 3 newest render by default with "Show N earlier subagents ▾"
+  const allIdle = {
+    totalCount: 5, runningCount: 0, totalSteps: 25,
+    items: [1, 2, 3, 4, 5].map((n) => ({ cascadeId: `idle-${n}`, nestingDepth: 1, title: `Idle ${n}`, statusBadge: 'Done', isRunning: false, stepCount: 5 })),
+  };
+  const idleDefault = ui.renderSubagentsDrawer(allIdle, true, 'root-1', false);
+  assert.ok(idleDefault.includes('data-subagent-id="idle-1"') && idleDefault.includes('data-subagent-id="idle-3"'));
+  assert.ok(!idleDefault.includes('data-subagent-id="idle-4"') && idleDefault.includes('Show 2 earlier subagents ▾'));
 });
 
 test('mounts <agy-toggle-group> and <agy-switch> in linkedom with AgyUI loaded without losing declarative children', () => {

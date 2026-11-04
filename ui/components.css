@@ -2,9 +2,9 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 2px;
-  background: color-mix(in srgb, var(--cm-secondary) 20%, transparent);
+  background: var(--onyx-well, color-mix(in srgb, var(--cm-secondary) 20%, transparent));
   padding: 2px;
-  border-radius: var(--radius-lg, 0.5rem);
+  border-radius: var(--nux-radius-pill, var(--agy-radius-pill, 9999px));
   border: 1px solid var(--cm-border);
   width: 100%;
   margin-bottom: 12px;
@@ -14,8 +14,8 @@
 #tab-nav .agy-toggle-item {
   height: 24px;
   padding: 0 8px;
-  border-radius: var(--radius-md, 0.375rem);
-  color: var(--cm-secondary-fg);
+  border-radius: var(--nux-radius-pill, var(--agy-radius-pill, 9999px));
+  color: var(--secondary-foreground, var(--cm-secondary-fg));
   font-family: var(--vscode-font-family);
   font-size: var(--text-xs, 0.75rem);
   line-height: 1rem;
@@ -27,7 +27,7 @@
 }
 
 #tab-nav .agy-toggle-item.active {
-  background: var(--cm-secondary);
+  background: var(--onyx-key, var(--cm-secondary));
   color: var(--cm-text);
 }
 
@@ -597,6 +597,22 @@
   padding: 0 6px;
   font-size: 10px;
   margin-left: auto;
+}
+
+.subagent-more-btn {
+  width: 100%;
+  justify-content: center;
+  height: 24px;
+  font-size: 11px;
+  color: var(--cm-muted);
+  background: var(--cm-card);
+  border: 1px solid var(--cm-border);
+  border-radius: var(--radius-md, 0.375rem);
+}
+
+.subagent-more-btn:hover {
+  color: var(--cm-text);
+  background: var(--cm-secondary);
 }
 
 @media (max-width: 340px) {
