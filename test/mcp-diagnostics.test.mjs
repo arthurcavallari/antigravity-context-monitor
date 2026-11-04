@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -381,7 +381,8 @@ test('navigateToHangarPlugin posts hangar-navigate message and Hangar core.js va
   assert.equal(refPosted[0].msg.pluginId, 'android-cli-plugin');
   assert.equal(refPosted[0].msg.targetId, 'android-cli-plugin/device-hub');
 
-  // Test Hangar receiver in antigravity-sidecar-hub/ui/core.js
+  // Test Hangar receiver in antigravity-sidecar-hub/ui/core.js when sibling repo is checked out
+  if (!existsSync(hangarCorePath)) return;
   const listeners = {};
   const subTabs = [];
   const hangarWindow = {
