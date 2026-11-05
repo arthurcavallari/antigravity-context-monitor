@@ -42,6 +42,9 @@ export function validateManifest(manifest, { packageVersion } = {}) {
     errors.push(`version (${manifest.version}) must match package.json version (${packageVersion})`);
   }
   if (!TIERS.has(manifest.capabilityTier)) errors.push(`capabilityTier must be one of ${[...TIERS].join(', ')}`);
+  if (manifest.funding !== undefined && !isHttpsUrl(manifest.funding)) {
+    errors.push('funding must be an https URL');
+  }
 
   const files = manifest.workspaceTriggers?.files;
   if (files !== undefined) {
