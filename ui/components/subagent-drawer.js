@@ -68,7 +68,7 @@
       .filter(Boolean)
       .join(' ');
     return html`
-      <div class="${cardCls}" data-subagent-id="${esc(sa.cascadeId)}" title="Click to inspect subagent (${esc(sa.cascadeId)})">
+      <div class="${cardCls}" role="button" tabindex="0" data-subagent-id="${esc(sa.cascadeId)}" title="Click to inspect subagent (${esc(sa.cascadeId)})">
         <div class="fit-header">
           <div class="fit-flow" style="min-width:0;flex:1;flex-wrap:nowrap">
             ${depthBadge}
@@ -194,7 +194,7 @@
       `;
     }
     return html`
-      <div id="subagents-collapse-toggle" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect spawned L1/L2 subagents and click to view their context window">
+      <div id="subagents-collapse-toggle" role="button" tabindex="0" aria-expanded="${subagentsExpanded ? 'true' : 'false'}" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect spawned L1/L2 subagents and click to view their context window">
         <div class="row-label muted">
           <span class="chevron ${subagentsExpanded ? 'open' : ''}">${chevronSvg}</span>
           <span>Subagents (${esc(totalCount)})</span>

@@ -93,7 +93,7 @@
       `
       : '';
     return html`
-      <div id="mcp-collapse-toggle" class="breakdown-row collapsible-toggle" title="Click to expand/collapse MCP servers">
+      <div id="mcp-collapse-toggle" role="button" tabindex="0" aria-expanded="${mcpExpanded ? 'true' : 'false'}" class="breakdown-row collapsible-toggle" title="Click to expand/collapse MCP servers">
         <div class="row-label muted">
           <span class="chevron ${mcpExpanded ? 'open' : ''}">${icon('chevron_right', 14)}</span>
           <span>MCP tools (${mcpServers.length} servers)</span>
@@ -141,7 +141,7 @@
       `
       : '';
     return html`
-      <div id="compactions-collapse-toggle" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect session compaction checkpoints and summaries">
+      <div id="compactions-collapse-toggle" role="button" tabindex="0" aria-expanded="${compactionsExpanded ? 'true' : 'false'}" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect session compaction checkpoints and summaries">
         <div class="row-label muted">
           <span class="chevron ${compactionsExpanded ? 'open' : ''}">${icon('chevron_right', 14)}</span>
           <span>Compaction checkpoints (${compaction.count})</span>
@@ -231,7 +231,7 @@
       drawerBody = html`<div class="culprits-drawer">${latestHtml}${flaggedHtml}</div>`;
     }
     return html`
-      <div id="effort-fit-collapse-toggle" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect per-prompt model &amp; thinking effort fit">
+      <div id="effort-fit-collapse-toggle" role="button" tabindex="0" aria-expanded="${effortOpen ? 'true' : 'false'}" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect per-prompt model &amp; thinking effort fit">
         <div class="row-label muted">
           <span class="chevron ${effortOpen ? 'open' : ''}">${icon('chevron_right', 14)}</span>
           <span>Prompt &amp; effort fit</span>
@@ -255,7 +255,7 @@
     const stepsHtml = topSteps.length
       ? topSteps.map((st) => {
         const rawSubIdAttr = st.subagentId
-          ? ` data-subagent-id="${esc(st.subagentId)}" title="Click to inspect subagent (${esc(st.subagentId)})"`
+          ? ` role="button" tabindex="0" data-subagent-id="${esc(st.subagentId)}" title="Click to inspect subagent (${esc(st.subagentId)})"`
           : '';
         const subIdAttr = rawSubIdAttr && cm.rawHtml ? cm.rawHtml(rawSubIdAttr) : rawSubIdAttr;
         return html`
@@ -301,7 +301,7 @@
       `
       : '';
     return html`
-      <div id="culprits-collapse-toggle" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect largest steps and system prompt sections in active memory">
+      <div id="culprits-collapse-toggle" role="button" tabindex="0" aria-expanded="${culpritsOpen ? 'true' : 'false'}" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect largest steps and system prompt sections in active memory">
         <div class="row-label muted">
           <span class="chevron ${culpritsOpen ? 'open' : ''}">${icon('chevron_right', 14)}</span>
           <span>Largest items in context</span>

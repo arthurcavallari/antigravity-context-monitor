@@ -128,6 +128,7 @@
       const isPulseActive = Boolean(state.latestData.isExecuting || Date.now() - state.lastTokenChangeAt < PULSE_HOLD_MS);
       const nextHdr = renderTopHeaderAndTabs(state.latestData, state, isPulseActive);
       if (nextHdr !== state.lastHeaderHtml) {
+        const activeHdrId = headerSlot.contains?.(document.activeElement) ? document.activeElement?.id : '';
         const restoreTabFocus = Boolean(
           document.activeElement && headerSlot.querySelector?.('#tab-nav')?.contains?.(document.activeElement),
         );
@@ -135,6 +136,8 @@
         state.lastHeaderHtml = nextHdr;
         if (restoreTabFocus) {
           headerSlot.querySelector?.('#tab-nav .agy-toggle-item.active')?.focus?.();
+        } else if (activeHdrId) {
+          document.getElementById(activeHdrId)?.focus?.();
         }
       }
     }
@@ -143,6 +146,7 @@
     } else if (tabSlot) {
       const nextBody = computeTabBodyHtml();
       if (nextBody !== state.lastTabHtml) {
+        const activeTabElId = tabSlot.contains?.(document.activeElement) ? document.activeElement?.id : '';
         const savedScrolls = new Map();
         tabSlot.querySelectorAll('.checkpoint-details[data-cp-index]').forEach((det) => {
           const box = det.querySelector('.checkpoint-summary');
@@ -154,6 +158,9 @@
           const box = tabSlot.querySelector(`.checkpoint-details[data-cp-index="${idx}"] .checkpoint-summary`);
           if (box) box.scrollTop = scrollTop;
         });
+        if (activeTabElId) {
+          document.getElementById(activeTabElId)?.focus?.();
+        }
       }
     }
     if (telemetryPill) {
@@ -238,6 +245,14 @@
   }
 
   appRoot?.addEventListener('click', handleAppClick);
+  appRoot?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const target = e.target?.nodeType === 3 ? e.target.parentElement : e.target;
+    const roleBtn = target?.closest?.('[role="button"], .collapsible-toggle');
+    if (!roleBtn || roleBtn.tagName === 'BUTTON') return;
+    e.preventDefault();
+    handleAppClick(e);
+  });
   appRoot?.addEventListener('toggle', (e) => {
     const det = e.target;
     if (!(det instanceof HTMLDetailsElement) || !det.classList.contains('checkpoint-details')) return;
