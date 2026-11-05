@@ -176,7 +176,6 @@
       try {
         state.diagData = await apiCall('/api/diagnostics', {
           includeLogs: state.logTailingEnabled,
-          cascadeId: state.pinnedCascadeId || state.lastCascadeId || state.hostCascadeId || '',
         });
         if (state.logTailingEnabled && Array.isArray(state.diagData?.logs)) {
           mergeIncomingLogs(state, state.diagData.logs);

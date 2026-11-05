@@ -161,12 +161,14 @@ test('renderDiagnosticsLists escapes terminal titles and sidecar errors', () => 
   assert.match(mcpWithPlugin, /data-action="hangar-navigate"\s+data-plugin-id="vercel-plugin"/);
   assert.ok(mcpWithPlugin.includes('nextjs'));
 
-  const diagWithIssues = ui.renderDiagnosticsLists({
-    warnings: [{ message: 'Step #4 produced ~12000 tokens', pluginId: 'science-plugin' }],
-    sidecars: [{ sidecarId: 'broken-sc', displayName: 'Broken', statusBadge: 'ERRORED', isErrored: true }],
+  const diagWithSidecars = ui.renderDiagnosticsLists({
+    sidecars: [
+      { sidecarId: 'sc-1', pluginId: 'science-plugin', displayName: 'Science', statusBadge: 'ERRORED', isErrored: true },
+      { sidecarId: 'broken-sc', displayName: 'Broken', statusBadge: 'ERRORED', isErrored: true },
+    ],
   });
-  assert.match(diagWithIssues, /data-action="hangar-navigate"\s+data-plugin-id="science-plugin"/);
-  assert.match(diagWithIssues, /data-action="hangar-navigate"\s+data-plugin-id="broken-sc"/);
+  assert.match(diagWithSidecars, /data-action="hangar-navigate"\s+data-plugin-id="science-plugin"/);
+  assert.match(diagWithSidecars, /data-action="hangar-navigate"\s+data-plugin-id="broken-sc"/);
 });
 
 test('renderContextTab renders .subagent-banner breadcrumb with Parent and Root navigation when inspecting a subagent', () => {

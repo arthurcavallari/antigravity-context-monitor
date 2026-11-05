@@ -18,7 +18,7 @@ import {
   createSidecarAppInstance,
   wrapMonitorStateSync,
 } from './lib/constants.mjs';
-import { fetchFullTelemetry, getLatestConversationSteps } from './lib/context-telemetry.mjs';
+import { fetchFullTelemetry } from './lib/context-telemetry.mjs';
 import { fetchDiagnosticsSnapshot } from './lib/diagnostics.mjs';
 import { buildMcpTools, checkMonitorAuth, createMonitorMutators } from './lib/mcp-tools.mjs';
 
@@ -92,9 +92,7 @@ for (const m of ['POST', 'GET']) {
 }
 app.api('/api/diagnostics', async (d, ctx) => stateSync.checkAuth(d, ctx) || fetchDiagnosticsSnapshot({
   includeLogs: Boolean(d?.includeLogs),
-  steps: Array.isArray(d?.steps)
-    ? d.steps
-    : getLatestConversationSteps(String(d?.cascadeId || lastActiveCascadeId || '')),
+  ...(Array.isArray(d?.steps) ? { steps: d.steps } : {}),
 }), 'POST');
 for (const [p, act] of MUTATION_ROUTES) {
   app.api(p, async (d, ctx) => stateSync.checkAuth(d, ctx) || (await stateSync.mutate(act, d || {})).result, 'POST');

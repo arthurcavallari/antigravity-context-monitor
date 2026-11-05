@@ -117,9 +117,6 @@
     const refreshSvg = icon('refresh', 14);
     const terminals = Array.isArray(diagData?.terminals) ? diagData.terminals : [];
     const sidecars = Array.isArray(diagData?.sidecars) ? diagData.sidecars : [];
-    const issues = Array.isArray(diagData?.warnings)
-      ? diagData.warnings
-      : (Array.isArray(diagData?.issues) ? diagData.issues : []);
     const terminalsHtml = terminals.length
       ? html`
         <div class="mcp-list-card">
@@ -142,36 +139,6 @@
         </div>
       `
       : html`<div class="empty-hint">No active background terminals</div>`;
-    const issuesHtml = issues.length
-      ? html`
-        <div class="mcp-list-card">
-          ${issues.map((item) => {
-            const text = typeof item === 'string' ? item : (item?.message || item?.title || 'Diagnostic warning');
-            const pluginId = typeof item === 'object' ? (item?.pluginId || item?.pluginName || '') : '';
-            const hangarBtn = pluginId
-              ? html`
-                <button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(pluginId)}" title="Inspect ${esc(pluginId)} in Hangar">
-                  Inspect in Hangar
-                </button>
-              `
-              : '';
-            return html`
-              <div class="mcp-card-row">
-                <div class="mcp-card-info">
-                  <div class="mcp-card-title"><span>${esc(text)}</span></div>
-                </div>
-                <div class="mcp-card-actions">
-                  ${hangarBtn}
-                  <button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-summary="${esc(text)}" title="Send diagnostic to Agent">
-                    Fix with Agent
-                  </button>
-                </div>
-              </div>
-            `;
-          })}
-        </div>
-      `
-      : '';
     const sidecarsHtml = sidecars.length
       ? html`
         <div class="mcp-list-card">
@@ -221,7 +188,6 @@
       `
       : html`<div class="empty-hint">No sidecars registered</div>`;
     return html`
-      ${issuesHtml}
       <div class="plan-header" style="margin:12px 0 8px">
         <span class="plan-title">Active Background Terminals <span class="agy-count-pill">${terminals.length}</span></span>
       </div>
