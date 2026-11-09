@@ -62,7 +62,8 @@
           <div id="card-tab-slot" class="tab-slot" role="tabpanel"></div>
           <div id="action-msg-slot" aria-live="polite"></div>
           <footer class="session-bar">
-            <select id="session-select" class="session-select" title="Sync with active chat tab or pin a session"></select>
+            <label class="cm-sr-only" for="session-select">Conversation</label>
+            <select id="session-select" class="session-select"></select>
             <span id="telemetry-pill" class="telemetry-pill" title="Exact API turn telemetry: input_tokens + cache_read_tokens (cache hit %)"></span>
           </footer>
         </section>
@@ -70,7 +71,9 @@
     );
     const sel = document.getElementById('session-select');
     if (!sel) return;
-    sel.addEventListener('mousedown', () => {
+    // Hold option rebuilds while the picker has focus, so a menu opened from the keyboard
+    // (Alt+Down) isn't rebuilt under the user either.
+    sel.addEventListener('focus', () => {
       state.isSelectMenuOpen = true;
     });
     sel.addEventListener('blur', () => {
@@ -109,7 +112,7 @@
     return html`
       <header class="cw-header">
         <div class="cw-title-group">
-          <span class="cw-title">Context window</span>
+          <h2 class="cw-title">Context window</h2>
           <button
             type="button"
             id="model-badge-btn"
@@ -293,7 +296,7 @@
 
     return html`
       <div class="plan-section">
-        <div class="plan-header"><span class="plan-title">Plan usage</span></div>
+        <div class="plan-header"><h3 class="plan-title">Plan usage</h3></div>
         ${planUsage.customModel
           ? html`<div class="plan-note">This conversation uses a custom model. Its requests go to your own provider and don't count against these limits.</div>`
           : ''}

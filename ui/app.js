@@ -51,6 +51,7 @@
     syncError: '',
     diagError: '',
     pendingDiag: new Set(),
+    pendingMcp: new Set(),
     lastTotalTokens: null,
     lastCascadeId: '',
     lastRootCascadeId: '',
@@ -66,6 +67,11 @@
   };
   let telemetrySeq = 0;
   let telemetryInFlight = false;
+  // Called before a mutation: a response to a request sent earlier is dropped instead of rendered.
+  window.ContextMonitor.invalidateTelemetry = () => {
+    telemetrySeq++;
+    telemetryInFlight = false;
+  };
   let diagInFlight = null;
   let lastSeenMutationAt = 0;
   const isPinnedToSubagent = () => Boolean(
@@ -90,7 +96,7 @@
   }
 
   const computeTabBodyHtml = () => (
-    state.activeTab === 'mcp' ? renderMcpBudgetsTab(state.latestData) : renderContextTab(state.latestData, state)
+    state.activeTab === 'mcp' ? renderMcpBudgetsTab(state.latestData, state) : renderContextTab(state.latestData, state)
   );
   const showActionMessage = (text, isError = true) => window.ContextMonitor.showToast?.(text, isError, ACTION_MSG_MS);
 
@@ -166,6 +172,8 @@
         setHtml(sessionSelect, nextHtml);
         sessionSelect.value = state.pinnedCascadeId;
         state.lastOptionsSig = nextHtml;
+        // The select cuts long titles; the tooltip shows the whole selected one.
+        sessionSelect.title = sessionSelect.selectedOptions?.[0]?.textContent || '';
       }
     }
   }

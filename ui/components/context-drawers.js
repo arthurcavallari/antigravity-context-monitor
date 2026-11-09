@@ -178,7 +178,7 @@
       const latestHtml = latTurn
         ? html`
           <div>
-            <div class="culprit-group-title">Latest Prompt</div>
+            <h4 class="culprit-group-title">Latest Prompt</h4>
             <div class="fit-card">
               <div class="fit-header">
                 <span class="fit-prompt">#${esc(latTurn.turnNumber)} "${esc(latTurn.promptPreview)}"</span>
@@ -215,9 +215,9 @@
       const flaggedHtml = flaggedTurns.length
         ? html`
           <div>
-            <div class="culprit-group-title">
+            <h4 class="culprit-group-title">
               Prompts Where Another Model Fits Better (${esc(advisor.flaggedTurnsCount)} of ${esc(advisor.totalTurns)})
-            </div>
+            </h4>
             ${flaggedTurns.map((ft) => html`
               <div class="fit-card" style="margin-bottom:5px">
                 <div class="fit-header">
@@ -313,11 +313,11 @@
       ? html`
         <div id="culprits-drawer" class="culprits-drawer">
           <div>
-            <div class="culprit-group-title">Largest Active Conversation Steps</div>
+            <h4 class="culprit-group-title">Largest Active Conversation Steps</h4>
             ${stepsHtml}
           </div>
           <div>
-            <div class="culprit-group-title">System Prompt Breakdown (${esc(culprits.formattedPromptTotalTokens || '0')} total)</div>
+            <h4 class="culprit-group-title">System Prompt Breakdown (${esc(culprits.formattedPromptTotalTokens || '0')} total)</h4>
             <div class="fit-card">${sectionsHtml}</div>
           </div>
         </div>
