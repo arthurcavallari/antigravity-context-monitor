@@ -252,6 +252,14 @@ body {
   color: var(--cm-muted);
 }
 
+/* .row-label is a flex box, so its own ellipsis never reaches the text: truncate the text span. */
+.row-label > span:not(.dot):not(.chevron) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dot {
   width: 8px;
   height: 8px;
@@ -430,8 +438,17 @@ body {
   transition: width 0.5s ease;
 }
 
-.quota-fill.claude {
+/* Plan quota bars, colored by what's left (Antigravity's thresholds). */
+.quota-fill.ok {
+  background: var(--cm-green-dot);
+}
+
+.quota-fill.warn {
   background: var(--cm-yellow);
+}
+
+.quota-fill.danger {
+  background: var(--cm-red);
 }
 
 .credits-box {
@@ -475,13 +492,21 @@ body {
   color: var(--cm-secondary-fg);
 }
 
-.cm-switch-row > label {
+.cm-switch-row label {
   cursor: pointer;
   user-select: none;
 }
 
-.cm-switch-row:hover > label {
+.cm-switch-row:hover label {
   color: var(--cm-text);
+}
+
+/* Label above a description, Antigravity's settings-row shape. */
+.cm-switch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .session-bar {

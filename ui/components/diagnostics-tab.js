@@ -1,7 +1,7 @@
 /** @fileoverview Renders Tab 3 (Diagnostics Log Tail, Auto-Scroll, Terminals Reaper, Sidecar Matrix). */
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
-  const { esc, icon, formatBadgeLabel, html, setHtml, switchHtml, setSwitch, focusKeyOf, restoreFocus } = cm;
+  const { esc, icon, formatBadgeLabel, html, rawHtml, setHtml, switchHtml, setSwitch, focusKeyOf, restoreFocus } = cm;
   const MAX_LIVE_LOG_LINES = 80;
   const MAX_PAUSED_LOG_LINES = 300;
   const SAFE_ID_RE = /^[a-zA-Z0-9._-]+$/;
@@ -116,9 +116,19 @@
     `;
   }
 
-  function renderDiagnosticsLists(diagData) {
-    const closeSvg = icon('close', 14);
-    const refreshSvg = icon('refresh', 14);
+  function renderDiagnosticsLists(diagData, { pending = null, error = '' } = {}) {
+    const errorHtml = error
+      ? html`<div class="error-banner diag-error" role="alert">Could not load diagnostics: ${esc(error)}</div>`
+      : '';
+    if (!diagData) {
+      return error
+        ? errorHtml
+        : html`<div class="empty-hint" role="status">${icon('progress_activity', 14, 'cm-spin')} Loading terminals and sidecars…</div>`;
+    }
+    // Pending buttons use aria-disabled, not disabled, so keyboard focus survives the re-render.
+    const isBusy = (key) => Boolean(pending?.has?.(key));
+    const busyAttrs = (busy) => (busy ? rawHtml(' aria-disabled="true" aria-busy="true"') : '');
+    const spinnerSvg = icon('progress_activity', 14, 'cm-spin');
     const terminals = Array.isArray(diagData?.terminals) ? diagData.terminals : [];
     const sidecars = Array.isArray(diagData?.sidecars) ? diagData.sidecars : [];
     const terminalsHtml = terminals.length
@@ -134,8 +144,14 @@
                 <div class="mcp-card-meta" title="${esc(t.workspaceUri)}">${esc(t.workspaceUri || 'No workspace')}</div>
               </div>
               <div class="mcp-card-actions">
-                <button class="agy-icon-btn term-kill-btn" data-terminal-id="${esc(t.terminalId)}" title="Terminate process ${esc(t.pid)}">
-                  ${closeSvg}
+                <button
+                  type="button"
+                  class="agy-icon-btn term-kill-btn"
+                  data-terminal-id="${esc(t.terminalId)}"
+                  aria-label="Stop ${esc(t.title)} (PID ${esc(t.pid)})"
+                  title="Stop process ${esc(t.pid)}"${busyAttrs(isBusy(`term:${t.terminalId}`))}
+                >
+                  ${isBusy(`term:${t.terminalId}`) ? spinnerSvg : icon('stop_circle', 14)}
                 </button>
               </div>
             </div>
@@ -162,8 +178,8 @@
               : '';
             const fixBtnHtml = isUnhealthy
               ? html`
-                <button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-sidecar-id="${esc(s.sidecarId)}" data-summary="${esc(fixSummary)}" title="Send diagnostic to Agent">
-                  Fix with Agent
+                <button type="button" class="agy-btn agy-btn-secondary fix-with-agent-btn" data-action="fix-with-agent" data-sidecar-id="${esc(s.sidecarId)}" data-summary="${esc(fixSummary)}" title="Ask the agent to fix this sidecar">
+                  Ask agent to fix
                 </button>
               `
               : '';
@@ -181,8 +197,14 @@
                 <div class="mcp-card-actions">
                   ${hangarBtnHtml}
                   ${fixBtnHtml}
-                  <button class="agy-icon-btn sidecar-restart-btn" data-sidecar-id="${esc(s.sidecarId)}" title="Restart ${esc(s.displayName)}">
-                    ${refreshSvg}
+                  <button
+                    type="button"
+                    class="agy-icon-btn sidecar-restart-btn"
+                    data-sidecar-id="${esc(s.sidecarId)}"
+                    aria-label="Restart ${esc(s.displayName)}"
+                    title="Restart ${esc(s.displayName)}"${busyAttrs(isBusy(`sidecar:${s.sidecarId}`))}
+                  >
+                    ${isBusy(`sidecar:${s.sidecarId}`) ? spinnerSvg : icon('restart_alt', 14)}
                   </button>
                 </div>
               </div>
@@ -192,6 +214,7 @@
       `
       : html`<div class="empty-hint">No sidecars registered</div>`;
     return html`
+      ${errorHtml}
       <div class="plan-header" style="margin:12px 0 8px">
         <span class="plan-title">Active Background Terminals <span class="agy-count-pill">${terminals.length}</span></span>
       </div>
@@ -203,7 +226,7 @@
     `;
   }
 
-  async function handleFixWithAgent(targetOrSummary) {
+  async function handleFixWithAgent(targetOrSummary, { toastOnError = true } = {}) {
     const summary = typeof targetOrSummary === 'string'
       ? targetOrSummary
       : (targetOrSummary?.getAttribute?.('data-summary') || targetOrSummary?.dataset?.summary || 'Context Monitor diagnostic warning reported.');
@@ -220,7 +243,7 @@
       cm.showToast?.('Sent diagnostic to Agent', 'info');
       return { ok: true, message: summary };
     } catch (err) {
-      cm.showToast?.(`Failed to notify Agent: ${err.message}`, 'error');
+      if (toastOnError) cm.showToast?.(`Failed to notify Agent: ${err.message}`, 'error');
       return { ok: false, error: err.message };
     }
   }
@@ -234,7 +257,7 @@
         </div>
         <div id="diag-log-body"></div>
       </div>
-      <div id="diag-lists-slot">${renderDiagnosticsLists(diagData)}</div>
+      <div id="diag-lists-slot">${renderDiagnosticsLists(diagData, { pending: uiState.pending, error: uiState.error })}</div>
     `;
   }
 
@@ -248,6 +271,8 @@
           logTailingEnabled: state.logTailingEnabled,
           logAutoScroll: state.logAutoScroll,
           displayLogs: state.logBuffer,
+          pending: state.pendingDiag,
+          error: state.diagError,
         }),
       );
       state.lastDiagHeaderHtml = 'mounted';
@@ -314,17 +339,38 @@
     }
     const listsEl = document.getElementById('diag-lists-slot');
     if (listsEl) {
-      const nextLists = renderDiagnosticsLists(state.diagData);
+      const nextLists = renderDiagnosticsLists(state.diagData, { pending: state.pendingDiag, error: state.diagError });
       if (nextLists !== state.lastDiagListsHtml) {
         const focusKey = listsEl.contains?.(document.activeElement) ? focusKeyOf(document.activeElement) : '';
         setHtml(listsEl, nextLists);
         state.lastDiagListsHtml = nextLists;
-        restoreFocus(listsEl, focusKey);
+        // A stopped terminal's row disappears; keep focus in the list instead of dropping it to <body>.
+        if (focusKey && !restoreFocus(listsEl, focusKey)) {
+          listsEl.querySelector?.('.term-kill-btn, .sidecar-restart-btn')?.focus?.({ preventScroll: true });
+        }
       }
     }
   }
 
-  async function handleDiagnosticsAction(target, _e, state, confirmAction, runAction, refreshDiagnostics) {
+  // Antigravity's own Stop and Restart act on the first click and show a spinner while pending.
+  async function withPendingDiag(state, key, work, refreshDiagnostics) {
+    if (!state.pendingDiag) state.pendingDiag = new Set();
+    if (state.pendingDiag.has(key)) return;
+    const sync = () => {
+      if (state.activeTab === 'diagnostics') syncDiagnosticsDom(state);
+    };
+    state.pendingDiag.add(key);
+    sync();
+    try {
+      await work();
+    } finally {
+      state.pendingDiag.delete(key);
+      await refreshDiagnostics();
+      sync();
+    }
+  }
+
+  async function handleDiagnosticsAction(target, _e, state, runAction, refreshDiagnostics) {
     const navBtn = target.closest('[data-action="hangar-navigate"]');
     if (navBtn) {
       navigateToHangarPlugin(navBtn.getAttribute?.('data-plugin-id') || navBtn.dataset?.pluginId || '');
@@ -361,24 +407,41 @@
     if (termKillBtn) {
       const terminalId = termKillBtn.getAttribute('data-terminal-id');
       const term = (state.diagData?.terminals || []).find((t) => t.terminalId === terminalId);
-      if (terminalId && confirmAction(`kill:${terminalId}`, `Terminate "${term?.title || 'terminal'}" (PID ${term?.pid || '?'})?`)) {
-        await runAction('Could not terminate terminal', '/api/terminals/close', { terminalId });
-        await refreshDiagnostics();
+      if (terminalId) {
+        await withPendingDiag(state, `term:${terminalId}`, async () => {
+          if (await runAction('Could not stop terminal', '/api/terminals/close', { terminalId })) {
+            cm.showToast?.(`Stopped ${term?.title || 'terminal'}`);
+          }
+        }, refreshDiagnostics);
       }
       return true;
     }
     const fixBtn = target.closest('[data-action="fix-with-agent"]');
     if (fixBtn) {
-      await handleFixWithAgent(fixBtn);
+      const summary = fixBtn.getAttribute?.('data-summary') || fixBtn.dataset?.summary || '';
+      cm.openConfirmDialog({
+        title: 'Send this diagnostic to the agent?',
+        body: summary,
+        note: 'The agent starts a new turn in the current conversation.',
+        confirmLabel: 'Send to agent',
+        returnFocusKey: focusKeyOf(fixBtn),
+        onConfirm: async () => {
+          const res = await handleFixWithAgent(summary, { toastOnError: false });
+          if (!res.ok) throw new Error(`Couldn't send it: ${res.error}`);
+        },
+      });
       return true;
     }
     const sidecarRestartBtn = target.closest('.sidecar-restart-btn');
     if (sidecarRestartBtn) {
       const sidecarId = sidecarRestartBtn.getAttribute('data-sidecar-id');
       const sidecar = (state.diagData?.sidecars || []).find((s) => s.sidecarId === sidecarId);
-      if (sidecarId && confirmAction(`restart:${sidecarId}`, `Restart ${sidecar?.displayName || sidecarId}?`)) {
-        await runAction('Could not restart sidecar', '/api/sidecars/restart', { sidecarId });
-        await refreshDiagnostics();
+      if (sidecarId) {
+        await withPendingDiag(state, `sidecar:${sidecarId}`, async () => {
+          if (await runAction('Could not restart sidecar', '/api/sidecars/restart', { sidecarId })) {
+            cm.showToast?.(`Restarted ${sidecar?.displayName || sidecarId}`);
+          }
+        }, refreshDiagnostics);
       }
       return true;
     }

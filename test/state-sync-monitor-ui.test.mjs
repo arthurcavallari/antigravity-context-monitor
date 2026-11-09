@@ -154,7 +154,7 @@ test('UI preserves 88% contrast across repeated polls with AgyShell loaded, supp
     sidecars: [{ sidecarId: 'broken-sc', displayName: 'Broken Sidecar', statusBadge: 'ERRORED', isErrored: true, lastError: 'ECONNREFUSED' }],
   });
   assert.match(diagHtml, /data-action="fix-with-agent"/);
-  assert.match(diagHtml, /Fix with Agent/);
+  assert.match(diagHtml, /Ask agent to fix/);
 
   const res = await window.ContextMonitor.handleFixWithAgent({
     getAttribute: (name) => (name === 'data-summary' ? 'Broken Sidecar ECONNREFUSED' : null),

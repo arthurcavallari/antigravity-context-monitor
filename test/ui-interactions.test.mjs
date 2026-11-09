@@ -386,8 +386,15 @@ test('diagnostics-tab and context-tab delegate clicks cleanly through #app witho
   assert.ok(fixBtn);
   const fixEv = { target: fixBtn };
   await appClickHandler(fixEv);
-  assert.equal(notifyCalls.length, 1);
+  assert.equal(notifyCalls.length, 0, 'Ask agent to fix opens a confirmation before starting a turn');
   assert.equal('_cmFixHandled' in fixEv, false);
+  const dialog = domDoc.getElementById('cm-dialog');
+  assert.ok(dialog, 'the confirmation dialog is open');
+  assert.match(dialog.textContent, /Send this diagnostic to the agent\?/);
+  dialog.querySelector('[data-dialog="confirm"]').click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(notifyCalls.length, 1);
+  assert.equal(domDoc.getElementById('cm-dialog'), null, 'the dialog closes once the diagnostic is sent');
 
   const navBtn = domDoc.querySelector('[data-action="hangar-navigate"]');
   assert.ok(navBtn);

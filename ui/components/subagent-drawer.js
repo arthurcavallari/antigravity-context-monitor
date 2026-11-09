@@ -1,7 +1,7 @@
 /** @fileoverview Subagent hierarchy banner, tree connector rows, and drill-down drawer. */
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
-  const { esc, icon, html } = cm;
+  const { esc, html, rawHtml } = cm;
 
   function renderSubagentStatusBadge(sa = {}) {
     const rawStatus = sa.statusBadge || (
@@ -68,11 +68,17 @@
       .filter(Boolean)
       .join(' ');
     return html`
-      <div class="${cardCls}" role="button" tabindex="0" data-subagent-id="${esc(sa.cascadeId)}" title="Click to inspect subagent (${esc(sa.cascadeId)})">
+      <div class="${cardCls}">
         <div class="fit-header">
           <div class="fit-flow" style="min-width:0;flex:1;flex-wrap:nowrap">
             ${depthBadge}
-            <span class="fit-prompt" title="${esc(titleText)}">${esc(titleText)}</span>
+            <button
+              type="button"
+              class="fit-prompt subagent-open no-focus-ring"
+              data-subagent-id="${esc(sa.cascadeId)}"
+              aria-label="${isCurrent ? 'Viewing' : 'Inspect'} ${esc(titleText)}"${isCurrent ? rawHtml(' aria-current="true"') : ''}
+              title="${esc(titleText)}"
+            >${esc(titleText)}</button>
           </div>
           ${renderSubagentStatusBadge(sa)}
         </div>
@@ -82,9 +88,7 @@
           ${sa.durationFormatted && sa.durationFormatted !== '—' ? html`<span>· ${esc(sa.durationFormatted)}</span>` : ''}
           ${sa.formattedParentContextTokens ? html`<span>· ${esc(sa.formattedParentContextTokens)} in parent</span>` : ''}
           ${sa.spawnStepRef ? html`<span class="thinking-sub">(${esc(sa.spawnStepRef)})</span>` : ''}
-          <button type="button" class="agy-btn subagent-inspect-btn" data-subagent-id="${esc(sa.cascadeId)}">
-            ${isCurrent ? 'Viewing' : 'Inspect'}
-          </button>
+          ${isCurrent ? html`<span class="subagent-viewing">Viewing</span>` : ''}
         </div>
         ${promptText ? html`<div class="fit-reason">"${esc(promptText)}"</div>` : ''}
       </div>
@@ -147,7 +151,6 @@
     const items = Array.isArray(subagents?.items) ? subagents.items : [];
     const totalCount = Number(subagents?.totalCount ?? items.length) || 0;
     if (totalCount === 0 || items.length === 0) return '';
-    const chevronSvg = icon('chevron_right', 14);
     const runningCount = Number(subagents?.runningCount ?? items.filter(isSubagentRunning).length);
     const totalSteps = Number(subagents?.totalSteps ?? items.reduce((sum, x) => sum + (Number(x?.stepCount) || 0), 0));
     const parentTokensText = subagents?.formattedParentContextTokens || '';
@@ -187,21 +190,22 @@
         `
         : '';
       cardsHtml = html`
-        <div class="culprits-drawer">
+        <div id="subagents-drawer" class="culprits-drawer">
           ${visibleItems.map((sa) => renderSubagentRow(sa, activeCascadeId))}
           ${moreBtnHtml}
         </div>
       `;
     }
     return html`
-      <div id="subagents-collapse-toggle" role="button" tabindex="0" aria-expanded="${subagentsExpanded ? 'true' : 'false'}" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect spawned L1/L2 subagents and click to view their context window">
-        <div class="row-label muted">
-          <span class="chevron ${subagentsExpanded ? 'open' : ''}">${chevronSvg}</span>
-          <span>Subagents (${esc(totalCount)})</span>
-          ${runningDotHtml}
-        </div>
-        <div class="row-tokens">${cm.rawHtml ? cm.rawHtml(rightParts.join(' · ')) : rightParts.join(' · ')}</div>
-      </div>
+      ${cm.drawerToggleHtml({
+        id: 'subagents-collapse-toggle',
+        controls: 'subagents-drawer',
+        expanded: subagentsExpanded,
+        label: `Subagents (${totalCount})`,
+        summary: rawHtml(rightParts.join(' · ')),
+        extra: runningDotHtml,
+        style: 'margin-top:4px',
+      })}
       ${cardsHtml}
     `;
   }

@@ -12,6 +12,12 @@
   const ICONS = {
     chevron_right: 'M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z',
     expand_more: 'M480-345 240-585l56-56 184 183 184-183 56 56-240 240Z',
+    // Stop (a ring around a square) and the pending spinner (a three-quarter ring), on the
+    // Material Symbols 960-unit grid that Antigravity uses for its stop and loading states.
+    stop_circle:
+      'M320-320h320v-320H320v320ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Z',
+    progress_activity:
+      'M480-80q-82 0-155-31.5t-127.5-86Q143-252 111.5-325T80-480q0-83 31.5-155.5t86-127Q252-817 325-848.5T480-880q17 0 28.5 11.5T520-840q0 17-11.5 28.5T480-800q-133 0-226.5 93.5T160-480q0 133 93.5 226.5T480-160q133 0 226.5-93.5T800-480q0-17 11.5-28.5T840-520q17 0 28.5 11.5T880-480q0 82-31.5 155t-86 127.5q-54.5 54.5-127 86T480-80Z',
   };
   window.AgyUI?.registerIcons?.(ICONS);
   const CM_FALLBACK_KEYS = [
@@ -249,13 +255,118 @@
     return `${el.tagName.toLowerCase()}${cls}${attrs}`;
   }
   function restoreFocus(root, key) {
-    if (!key || !root?.querySelector) return;
+    if (!key || !root?.querySelector) return false;
     try {
-      root.querySelector(key)?.focus?.({ preventScroll: true });
+      const target = root.querySelector(key);
+      target?.focus?.({ preventScroll: true });
+      return Boolean(target);
     } catch {
-      /* ignore an unparseable selector */
+      return false;
     }
   }
+
+  // A modal confirmation shaped like Antigravity's own: a question as the title, a short body,
+  // Cancel and the action button, focus on the action button, a spinner while it runs, and an
+  // inline role="alert" error. onConfirm throws to keep the dialog open with that error.
+  function openConfirmDialog({ title, body = '', note = '', confirmLabel, onConfirm, returnFocusKey = '' }) {
+    const host = document.getElementById?.('app') || document.body;
+    if (!host?.appendChild) return null;
+    document.getElementById?.('cm-dialog')?.remove?.();
+    const dlg = document.createElement('dialog');
+    dlg.id = 'cm-dialog';
+    dlg.className = 'cm-dialog';
+    dlg.setAttribute('aria-labelledby', 'cm-dialog-title');
+    dlg.setAttribute('aria-describedby', 'cm-dialog-body');
+    const actionLabel = (busy) => html`${busy ? icon('progress_activity', 14, 'cm-spin') : ''}<span>${confirmLabel}</span>`;
+    setHtml(
+      dlg,
+      html`
+        <h2 id="cm-dialog-title" class="cm-dialog-title">${title}</h2>
+        <div id="cm-dialog-body" class="cm-dialog-body">
+          ${body ? html`<p class="cm-dialog-quote">${body}</p>` : ''}
+          ${note ? html`<p>${note}</p>` : ''}
+        </div>
+        <p class="cm-dialog-error" role="alert"></p>
+        <div class="cm-dialog-actions">
+          <button type="button" class="agy-btn agy-btn-secondary cm-dialog-btn" data-dialog="cancel">Cancel</button>
+          <button type="button" class="agy-btn agy-btn-primary cm-dialog-btn" data-dialog="confirm" autofocus>${actionLabel(false)}</button>
+        </div>
+      `,
+    );
+    host.appendChild(dlg);
+    const confirmBtn = dlg.querySelector('[data-dialog="confirm"]');
+    const cancelBtn = dlg.querySelector('[data-dialog="cancel"]');
+    const errorEl = dlg.querySelector('.cm-dialog-error');
+    let busy = false;
+    const setBusy = (on) => {
+      busy = on;
+      // aria-disabled, not disabled: a disabled button drops focus out of the dialog.
+      for (const b of [confirmBtn, cancelBtn]) {
+        if (on) b?.setAttribute?.('aria-disabled', 'true');
+        else b?.removeAttribute?.('aria-disabled');
+      }
+      setHtml(confirmBtn, actionLabel(on));
+    };
+    const close = () => {
+      if (dlg.open && typeof dlg.close === 'function') dlg.close();
+      dlg.remove?.();
+      restoreFocus(document, returnFocusKey);
+    };
+    dlg.addEventListener('cancel', (e) => {
+      e.preventDefault?.();
+      if (!busy) close();
+    });
+    dlg.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !busy && typeof dlg.showModal !== 'function') close();
+    });
+    dlg.addEventListener('click', (e) => {
+      if (e.target !== dlg || busy || typeof dlg.getBoundingClientRect !== 'function') return;
+      const r = dlg.getBoundingClientRect();
+      const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      if (!inside) close();
+    });
+    cancelBtn?.addEventListener('click', () => {
+      if (!busy) close();
+    });
+    confirmBtn?.addEventListener('click', async () => {
+      if (busy) return;
+      errorEl.textContent = '';
+      setBusy(true);
+      try {
+        await onConfirm?.();
+        close();
+      } catch (err) {
+        setBusy(false);
+        errorEl.textContent = err?.message || 'Something went wrong. Try again.';
+        confirmBtn.focus?.();
+      }
+    });
+    if (typeof dlg.showModal === 'function') dlg.showModal();
+    else dlg.setAttribute('open', '');
+    confirmBtn?.focus?.();
+    return dlg;
+  }
+
+  // A collapsible drawer row. Antigravity's disclosures are real <button aria-expanded> elements.
+  // The label and summary truncate with an ellipsis; below 340px the summary drops under the label.
+  // label and summary may be plain text or trusted html; each gets a title so cut-off text is
+  // recoverable on hover.
+  const drawerToggleHtml = ({ id, controls, expanded = false, label, summary = '', summaryCls = '', extra = '', style = '' }) => html`
+    <button
+      type="button"
+      id="${id}"
+      class="breakdown-row collapsible-toggle"
+      aria-expanded="${expanded ? 'true' : 'false'}"
+      aria-controls="${controls}"${style ? rawHtml(` style="${escapeRaw(style)}"`) : ''}
+    >
+      <span class="row-label muted">
+        <span class="chevron ${expanded ? 'open' : ''}" aria-hidden="true">${icon('chevron_right', 14)}</span>
+        <span title="${label}">${label}</span>
+        ${extra}
+      </span>
+      <span class="row-tokens${summaryCls ? ` ${summaryCls}` : ''}" title="${summary}">${summary}</span>
+    </button>
+  `;
 
   // Antigravity's switch is the track itself: one button role="switch", named from outside
   // (aria-labelledby or aria-label). attrs is raw markup, so callers escape interpolated values.
@@ -438,6 +549,8 @@
     showToast,
     focusKeyOf,
     restoreFocus,
+    openConfirmDialog,
+    drawerToggleHtml,
     switchHtml,
     setSwitch,
     formatTokens: (n) => (Number(n) >= 1000 ? `${(Number(n) / 1000).toFixed(1)}k` : String(Number(n) || 0)),
