@@ -104,7 +104,7 @@ test('renderContextTab renders one row per category, skips inactive bar segments
   assert.equal((bar.match(/class="bar-segment"/g) || []).length, 2);
   assert.ok(!bar.includes('MCP tools (deferred)'));
   assert.ok(!html.includes(HOSTILE));
-  assert.ok(html.includes(`<div class="checkpoint-summary">${HOSTILE_ESCAPED}</div>`));
+  assert.ok(html.includes(`<div class="checkpoint-summary" tabindex="0" role="region" aria-label="Checkpoint 1 summary">${HOSTILE_ESCAPED}</div>`));
   assert.ok(html.includes(`"${HOSTILE_ESCAPED}"`));
 });
 

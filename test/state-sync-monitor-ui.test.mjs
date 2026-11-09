@@ -114,9 +114,13 @@ test('UI preserves 88% contrast across repeated polls with AgyShell loaded, supp
   const hostTheme = resolveHostTheme({ '--vscode-editor-background': '#18181b', '--vscode-editor-foreground': '#e4e4e7' });
   window.ContextMonitor.applyTheme(hostTheme);
   window.ContextMonitor.applyTheme(hostTheme);
-  assert.match(props.get('--cm-muted'), /65%/);
-  assert.match(props.get('--cm-secondary-fg'), /85%/);
-  assert.match(props.get('--agy-ink-soft'), /88%/);
+  // A server payload (cssVariables + vars) takes the native path: the host tokens go inline, while
+  // the --cm-* aliases and the 88% --agy-ink-soft come from styles.css and shell.css.
+  assert.ok(props.get('--background'));
+  assert.ok(props.get('--muted-foreground') && props.get('--secondary-foreground'));
+  assert.equal(props.has('--cm-muted'), false);
+  assert.equal(props.has('--cm-secondary-fg'), false);
+  assert.equal(props.has('--agy-ink-soft'), false);
 
   vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
   assert.equal(createdEventSources.length, 0);

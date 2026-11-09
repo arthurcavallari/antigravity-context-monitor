@@ -89,7 +89,7 @@
           ${mcpServers.map((s) => html`
             <div class="mcp-server-row">
               <span class="mcp-server-name" title="${esc(s.fullServerName)}">
-                <span class="dot sm" style="background:var(--chart-green, #388a34)"></span>
+                <span class="dot sm status-ok"></span>
                 <span>${esc(s.serverName)}</span>
               </span>
               <span class="mcp-server-count">${esc(s.toolCount)} tools</span>
@@ -129,7 +129,7 @@
               ? html`
                 <details class="checkpoint-details" data-cp-index="${esc(cp.index)}" ${isOpen ? 'open' : ''}>
                   <summary>Checkpoint summary</summary>
-                  <div class="checkpoint-summary">${esc(cp.summary)}</div>
+                  <div class="checkpoint-summary" tabindex="0" role="region" aria-label="Checkpoint ${esc(cp.index)} summary">${esc(cp.summary)}</div>
                 </details>
               `
               : '';
