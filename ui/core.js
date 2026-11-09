@@ -9,7 +9,10 @@
   } catch {
     /* ignore */
   }
-  const ICONS = { chevron_right: 'M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z' };
+  const ICONS = {
+    chevron_right: 'M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z',
+    expand_more: 'M480-345 240-585l56-56 184 183 184-183 56 56-240 240Z',
+  };
   window.AgyUI?.registerIcons?.(ICONS);
   const CM_FALLBACK_KEYS = [
     '--cm-bg',
@@ -190,6 +193,18 @@
 
   function showToast(text, isError = false, durationMs = 4000) {
     if (typeof document === 'undefined') return;
+    const isErr = isError === true || isError === 'error';
+    if (window.AgyUI?.showToast) {
+      if (!text) {
+        document.querySelector?.('.agy-toast')?.remove?.();
+        return;
+      }
+      const toast = window.AgyUI.showToast(text, { error: isErr, durationMs });
+      // Older kits render the toast without a live region; make sure it is announced.
+      toast?.setAttribute?.('role', isErr ? 'alert' : 'status');
+      toast?.setAttribute?.('aria-live', isErr ? 'assertive' : 'polite');
+      return;
+    }
     let slot = document.getElementById?.('action-msg-slot');
     if (!slot && document.body?.appendChild && document.createElement) {
       slot = document.createElement('div');
@@ -197,15 +212,66 @@
       document.body.appendChild(slot);
     }
     if (!slot) return;
+    if (!slot.getAttribute?.('aria-live')) slot.setAttribute?.('aria-live', 'polite');
     if (typeof clearTimeout === 'function' && toastTimer) clearTimeout(toastTimer);
-    const isErr = isError === true || isError === 'error';
     setHtml(
       slot,
-      text ? html`<div class="${isErr ? 'error-banner' : 'loading-state'} action-msg">${esc(text)}</div>` : '',
+      text
+        ? html`<div class="${isErr ? 'error-banner' : 'loading-state'} action-msg"${rawHtml(isErr ? ' role="alert"' : '')}>${esc(text)}</div>`
+        : '',
     );
     if (text && typeof setTimeout === 'function' && durationMs > 0) {
       toastTimer = setTimeout(() => setHtml(slot, ''), durationMs);
     }
+  }
+
+  // Re-renders replace nodes through innerHTML, so focus is restored by a selector that finds the
+  // same control again. Controls without an id are keyed by their tag, stable classes and data attributes.
+  const FOCUS_KEY_ATTRS = ['data-subagent-id', 'data-server', 'data-terminal-id', 'data-sidecar-id', 'data-plugin-id', 'data-action', 'data-tab'];
+  const STATE_CLASSES = new Set(['active', 'active-subagent', 'open', 'on', 'spinning', 'disabled', 'strike']);
+  const cssIdent = (v) => (globalThis.CSS?.escape ? globalThis.CSS.escape(String(v)) : String(v).replace(/[^\w-]/g, (c) => `\\${c}`));
+  const cssString = (v) => String(v).replace(/["\\]/g, (c) => `\\${c}`);
+  function focusKeyOf(el) {
+    if (!el?.tagName || (typeof document !== 'undefined' && el === document.body)) return '';
+    if (el.id) return `#${cssIdent(el.id)}`;
+    if (el.tagName === 'SUMMARY') {
+      const idx = el.closest?.('[data-cp-index]')?.getAttribute?.('data-cp-index');
+      return idx ? `details[data-cp-index="${cssString(idx)}"] > summary` : '';
+    }
+    const attrs = FOCUS_KEY_ATTRS.filter((a) => el.hasAttribute?.(a))
+      .map((a) => `[${a}="${cssString(el.getAttribute(a))}"]`)
+      .join('');
+    if (!attrs) return '';
+    const cls = Array.from(el.classList || [])
+      .filter((c) => !STATE_CLASSES.has(c))
+      .map((c) => `.${cssIdent(c)}`)
+      .join('');
+    return `${el.tagName.toLowerCase()}${cls}${attrs}`;
+  }
+  function restoreFocus(root, key) {
+    if (!key || !root?.querySelector) return;
+    try {
+      root.querySelector(key)?.focus?.({ preventScroll: true });
+    } catch {
+      /* ignore an unparseable selector */
+    }
+  }
+
+  // Antigravity's switch is the track itself: one button role="switch", named from outside
+  // (aria-labelledby or aria-label). attrs is raw markup, so callers escape interpolated values.
+  const switchHtml = ({ on = false, size = 'md', cls = '', attrs = '' } = {}) => rawHtml(
+    `<button type="button" role="switch" aria-checked="${on ? 'true' : 'false'}" class="${
+      ['agy-switch', size === 'sm' ? 'sm' : '', cls, on ? 'on' : ''].filter(Boolean).join(' ')
+    }"${attrs ? ` ${attrs}` : ''}><span class="agy-switch-thumb"></span></button>`,
+  );
+  function setSwitch(el, on) {
+    if (!el) return;
+    if (window.AgyUI?.syncSwitchState) {
+      window.AgyUI.syncSwitchState(el, on);
+      return;
+    }
+    el.setAttribute?.('aria-checked', on ? 'true' : 'false');
+    el.classList?.toggle?.('on', Boolean(on));
   }
 
   const POLL_FAST_MS = 1500;
@@ -370,6 +436,10 @@
     mutateState: (a, p = {}) => cm.apiCall('/api/mutate', a && typeof a === 'object' ? a : { action: String(a || ''), payload: p }),
     notifyAgent,
     showToast,
+    focusKeyOf,
+    restoreFocus,
+    switchHtml,
+    setSwitch,
     formatTokens: (n) => (Number(n) >= 1000 ? `${(Number(n) / 1000).toFixed(1)}k` : String(Number(n) || 0)),
     formatPct: (n) => `${(Number(n) || 0).toFixed(1)}%`,
     formatRelativeReset: (str) => String(str || '—'),

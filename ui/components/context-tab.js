@@ -1,7 +1,8 @@
 /** @fileoverview Renders Top Header, Tab Bar, and Tab 1 (Context Window, Drawers, Turn Strip, Plan Usage). */
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
-  const { esc, icon, html, rawHtml, setHtml } = cm;
+  const { esc, icon, html, rawHtml, setHtml, switchHtml } = cm;
+  const TABS = [['context', 'Context'], ['mcp', 'MCP & Budgets'], ['diagnostics', 'Diagnostics']];
   const DRAWER_TOGGLES = {
     '#model-badge-btn': 'modelProfileOpen',
     '#context-help-btn': 'contextHelpOpen',
@@ -55,8 +56,8 @@
       html`
         <section class="context-card">
           <div id="card-header-slot"></div>
-          <div id="card-tab-slot" class="tab-slot"></div>
-          <div id="action-msg-slot"></div>
+          <div id="card-tab-slot" class="tab-slot" role="tabpanel"></div>
+          <div id="action-msg-slot" aria-live="polite"></div>
           <footer class="session-bar">
             <select id="session-select" class="session-select" title="Sync with active chat tab or pin a session"></select>
             <span id="telemetry-pill" class="telemetry-pill" title="Exact API turn telemetry: input_tokens + cache_read_tokens (cache hit %)"></span>
@@ -87,6 +88,7 @@
 
   function renderTopHeaderAndTabs(data, state = {}, isPulseActive = false) {
     const refreshSvg = icon('refresh', 14);
+    const activeTab = state.activeTab || 'context';
     const { model = {}, context = {}, session = {}, subagents = {} } = data || {};
     let badgeClass = model.isGemini === false ? 'model-badge claude' : 'model-badge';
     if (model.isCustom) badgeClass = 'model-badge custom';
@@ -105,10 +107,17 @@
       <header class="cw-header">
         <div class="cw-title-group">
           <span class="cw-title">Context window</span>
-          <button id="model-badge-btn" class="${badgeClass} clickable" title="Click to view model profile &amp; specs">
-            ${esc(model.badgeLabel || 'Gemini')} <span class="badge-chevron ${state.modelProfileOpen ? 'open' : ''}">▾</span>
+          <button
+            type="button"
+            id="model-badge-btn"
+            class="${badgeClass} clickable"
+            aria-expanded="${state.modelProfileOpen ? 'true' : 'false'}"
+            aria-controls="model-profile-drawer"
+            title="Model profile and specs"
+          >
+            ${esc(model.badgeLabel || 'Gemini')}<span class="badge-chevron ${state.modelProfileOpen ? 'open' : ''}" aria-hidden="true">${icon('expand_more', 12)}</span>
           </button>
-          <span class="activity-pulse ${pulseActive ? 'active' : ''}" title="${pulseTitle}"></span>
+          <span class="activity-pulse ${pulseActive ? 'active' : ''}" title="${pulseTitle}" role="img" aria-label="${pulseTitle}"></span>
         </div>
         <div class="cw-summary-group">
           <span class="${usageCls}" title="${model.isCustom
@@ -116,15 +125,41 @@
             : html`Cortex autocompact ceiling: ${esc(ceilingText)} · Native model window: ${esc(nativeText)}`}">
             <strong>${esc(context.formattedUsed || '0')}</strong> / ${esc(ceilingText)} (${esc(context.formattedUsedPct || '0.0%')})
           </span>
-          ${model.isCustom ? '' : html`<button id="context-help-btn" class="help-pill ${state.contextHelpOpen ? 'active' : ''}" title="Why ${esc(ceilingText)} instead of ${esc(nativeText)}?">?</button>`}
+          ${model.isCustom ? '' : html`
+            <button
+              type="button"
+              id="context-help-btn"
+              class="help-pill ${state.contextHelpOpen ? 'active' : ''}"
+              aria-expanded="${state.contextHelpOpen ? 'true' : 'false'}"
+              aria-controls="context-help-drawer"
+              aria-label="Why ${esc(ceilingText)} instead of ${esc(nativeText)}?"
+              title="Why ${esc(ceilingText)} instead of ${esc(nativeText)}?"
+            >?</button>
+          `}
           <button id="refresh-btn" class="agy-icon-btn ${state.isRefreshing ? 'spinning' : ''}" title="Refresh telemetry">${refreshSvg}</button>
         </div>
       </header>
       ${cm.renderHeaderDrawers ? cm.renderHeaderDrawers(data, state) : ''}
-      <agy-toggle-group id="tab-nav" class="agy-toggle-group agy-toggle-group-grid" layout="grid" value="${esc(state.activeTab || 'context')}">
-        <button class="agy-toggle-item ${state.activeTab === 'context' ? 'active' : ''}" data-tab="context">Context</button>
-        <button class="agy-toggle-item ${state.activeTab === 'mcp' ? 'active' : ''}" data-tab="mcp">MCP &amp; Budgets</button>
-        <button class="agy-toggle-item ${state.activeTab === 'diagnostics' ? 'active' : ''}" data-tab="diagnostics">Diagnostics</button>
+      <agy-toggle-group
+        id="tab-nav"
+        role="tablist"
+        aria-label="Context Monitor views"
+        class="agy-toggle-group agy-toggle-group-grid"
+        layout="grid"
+        value="${esc(activeTab)}"
+      >
+        ${TABS.map(([id, label]) => html`
+          <button
+            type="button"
+            id="tab-${id}"
+            role="tab"
+            aria-selected="${activeTab === id ? 'true' : 'false'}"
+            aria-controls="card-tab-slot"
+            tabindex="${activeTab === id ? '0' : '-1'}"
+            class="agy-toggle-item ${activeTab === id ? 'active' : ''}"
+            data-tab="${id}"
+          >${label}</button>
+        `)}
       </agy-toggle-group>
     `;
   }
@@ -258,12 +293,10 @@
             </div>
             <div class="credits-sub">${sessionBurnText}</div>
           </div>
-          <button id="ai-overage-toggle" type="button" role="switch" aria-checked="${overageOn}" class="overage-toggle" title="Toggle Enable AI Credit Overages">
-            <span>Overage</span>
-            <agy-switch class="agy-switch ${overageOn ? 'on' : ''}" ${overageOn ? 'checked' : ''}>
-              <span class="agy-switch-thumb"></span>
-            </agy-switch>
-          </button>
+          <span class="cm-switch-row">
+            <label id="ai-overage-label" for="ai-overage-toggle">Enable AI credit overages</label>
+            ${switchHtml({ on: overageOn, attrs: 'id="ai-overage-toggle" aria-labelledby="ai-overage-label"' })}
+          </span>
         </div>
       </div>
     `;

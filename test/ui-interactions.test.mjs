@@ -373,7 +373,7 @@ test('diagnostics-tab and context-tab delegate clicks cleanly through #app witho
   assert.ok(logToggleBtn);
   await appClickHandler({ target: logToggleBtn });
   assert.equal(logToggleBtn.getAttribute('aria-checked'), 'true');
-  assert.equal(logToggleBtn.querySelector('.agy-switch')?.checked, true);
+  assert.equal(logToggleBtn.classList.contains('on'), true);
 
   const optsHtml = window.ContextMonitor.renderSessionOptions([{ cascadeId: 's1', title: 'Alpha' }], { title: 'Main' }, '');
   assert.equal(

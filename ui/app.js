@@ -19,6 +19,8 @@
     syncDiagnosticsDom,
     nextPollDelayMs,
     createVisibilityPoller,
+    focusKeyOf,
+    restoreFocus,
   } = window.ContextMonitor;
 
   const PULSE_HOLD_MS = 2500;
@@ -141,12 +143,13 @@
         }
       }
     }
+    tabSlot?.setAttribute?.('aria-labelledby', `tab-${state.activeTab}`);
     if (state.activeTab === 'diagnostics') {
       syncDiagnosticsDom(state);
     } else if (tabSlot) {
       const nextBody = computeTabBodyHtml();
       if (nextBody !== state.lastTabHtml) {
-        const activeTabElId = tabSlot.contains?.(document.activeElement) ? document.activeElement?.id : '';
+        const focusKey = tabSlot.contains?.(document.activeElement) ? focusKeyOf(document.activeElement) : '';
         const savedScrolls = new Map();
         tabSlot.querySelectorAll('.checkpoint-details[data-cp-index]').forEach((det) => {
           const box = det.querySelector('.checkpoint-summary');
@@ -158,9 +161,7 @@
           const box = tabSlot.querySelector(`.checkpoint-details[data-cp-index="${idx}"] .checkpoint-summary`);
           if (box) box.scrollTop = scrollTop;
         });
-        if (activeTabElId) {
-          document.getElementById(activeTabElId)?.focus?.();
-        }
+        restoreFocus(tabSlot, focusKey);
       }
     }
     if (telemetryPill) {
@@ -237,7 +238,7 @@
       if (reqId !== telemetrySeq) return;
       state.isRefreshing = false;
       if (!state.latestData && appRoot) {
-        setHtml(appRoot, html`<div class="error-banner">Telemetry sync error: ${esc(err.message)}</div>`);
+        setHtml(appRoot, html`<div class="error-banner" role="alert">Telemetry sync error: ${esc(err.message)}</div>`);
       }
     } finally {
       if (reqId === telemetrySeq) telemetryInFlight = false;
@@ -252,6 +253,14 @@
     if (!roleBtn || roleBtn.tagName === 'BUTTON') return;
     e.preventDefault();
     handleAppClick(e);
+  });
+  // Escape closes the header drawers. Focus stays where it is; the header re-render restores it by id.
+  document.addEventListener?.('keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented || !(state.modelProfileOpen || state.contextHelpOpen)) return;
+    if (e.target?.closest?.('select')) return;
+    state.modelProfileOpen = false;
+    state.contextHelpOpen = false;
+    render();
   });
   appRoot?.addEventListener('toggle', (e) => {
     const det = e.target;

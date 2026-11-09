@@ -1,7 +1,7 @@
 /** @fileoverview Renders Tab 2 (Skills & Rules Token Budgets + Live MCP Server Controls). */
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
-  const { esc, icon, formatBadgeLabel, html, setHtml } = cm;
+  const { esc, icon, formatBadgeLabel, html, setHtml, switchHtml, setSwitch } = cm;
 
   function renderMcpServerRow(srv, refreshSvg) {
     const badgeCls = srv.isError ? 'agy-badge error' : (srv.enabled ? 'agy-badge ready' : 'agy-badge off');
@@ -30,11 +30,11 @@
           <button class="agy-icon-btn mcp-refresh-btn" data-server="${esc(srv.fullServerName)}" title="Reload ${esc(srv.serverName)}">
             ${refreshSvg}
           </button>
-          <button type="button" role="switch" aria-checked="${Boolean(srv.enabled)}" class="overage-toggle mcp-toggle-btn" data-server="${esc(srv.fullServerName)}" data-enabled="${srv.enabled ? '1' : '0'}" title="Enable or disable ${esc(srv.serverName)}">
-            <agy-switch class="agy-switch ${srv.enabled ? 'on' : ''}" ${srv.enabled ? 'checked' : ''}>
-              <span class="agy-switch-thumb"></span>
-            </agy-switch>
-          </button>
+          ${switchHtml({
+            on: Boolean(srv.enabled),
+            cls: 'mcp-toggle-btn',
+            attrs: `data-server="${esc(srv.fullServerName)}" data-enabled="${srv.enabled ? '1' : '0'}" aria-label="Toggle ${esc(srv.serverName)}" title="Enable or disable ${esc(srv.serverName)}"`,
+          })}
         </div>
       </div>
     `;
@@ -122,16 +122,7 @@
     if (srv) {
       Object.assign(srv, { enabled: next, statusBadge: next ? 'READY' : 'OFF', isError: false });
       btn.setAttribute('data-enabled', next ? '1' : '0');
-      if (window.AgyUI?.syncSwitchState) {
-        window.AgyUI.syncSwitchState(btn, next);
-      } else {
-        btn.setAttribute('aria-checked', String(next));
-        const sw = btn.querySelector('.agy-switch');
-        if (sw) {
-          sw.checked = next;
-          sw.classList?.toggle?.('on', next);
-        }
-      }
+      setSwitch(btn, next);
       const row = btn.closest('.mcp-card-row');
       row?.classList.toggle('disabled', !next);
       row?.querySelector('.mcp-server-name')?.classList.toggle('strike', !next);
@@ -155,16 +146,7 @@
     if (overageBtn && state.latestData?.planUsage?.aiCredits) {
       const next = !state.latestData.planUsage.aiCredits.useAiCredits;
       state.latestData.planUsage.aiCredits.useAiCredits = next;
-      if (window.AgyUI?.syncSwitchState) {
-        window.AgyUI.syncSwitchState(overageBtn, next);
-      } else {
-        overageBtn.setAttribute('aria-checked', String(next));
-        const sw = overageBtn.querySelector('.agy-switch');
-        if (sw) {
-          sw.checked = next;
-          sw.classList?.toggle?.('on', next);
-        }
-      }
+      setSwitch(overageBtn, next);
       state.lastTabHtml = computeTabBodyHtml();
       try {
         await apiCall('/api/ai-credits/toggle', { enabled: next });

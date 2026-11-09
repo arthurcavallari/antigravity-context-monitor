@@ -21,7 +21,7 @@
       ? 'Set by your provider'
       : `${context.formattedNativeCeiling || model.nativeCeilingFormatted || '1.0M'} single-turn burst`;
     return html`
-      <div class="model-profile-drawer">
+      <div id="model-profile-drawer" class="model-profile-drawer">
         <div class="context-help-title">
           <span>${esc(model.label || model.modelId)}</span>
           <span>Model Profile</span>
@@ -59,7 +59,7 @@
     const ceilingText = context.formattedCeiling || '256k';
     const nativeText = context.formattedNativeCeiling || model.nativeCeilingFormatted || '1.0M';
     return html`
-      <div class="context-help-drawer">
+      <div id="context-help-drawer" class="context-help-drawer">
         <div class="context-help-title">
           <span>Why ${esc(ceilingText)} instead of ${esc(nativeText)}?</span>
           <span>Cortex Harness</span>
