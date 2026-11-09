@@ -59,7 +59,7 @@ test('renderMcpBudgetsTab shows empty state, escapes server data, and clamps fil
   assert.match(html, /aria-checked="true"[^>]*data-server="plugin\/evil&quot;name"\s+data-enabled="1"/);
   assert.match(html, /aria-checked="false"[^>]*data-server="off-server"\s+data-enabled="0"/);
   assert.ok(html.includes('width:100%;background:var(--chart-yellow'));
-  assert.ok(html.includes('width:0%;background:#2ec4b6'));
+  assert.ok(html.includes('width:0%;background:var(--cm-chart-teal, #2ec4b6)'));
 });
 
 test('mergeIncomingLogs caps, appends only new lines, and trims on auto-scroll', () => {

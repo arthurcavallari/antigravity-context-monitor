@@ -97,7 +97,7 @@
             <span class="quota-meta">${esc(rulesB.formattedUsed)} / ${esc(rulesB.formattedLimit)} tokens (${esc(rulesB.formattedPct)})</span>
           </div>
           <div class="quota-track">
-            <div class="quota-fill" style="width:${rulesFillPct}%;background:#2ec4b6"></div>
+            <div class="quota-fill" style="width:${rulesFillPct}%;background:var(--cm-chart-teal, #2ec4b6)"></div>
           </div>
         </div>
         ${skillInjHtml}

@@ -152,7 +152,7 @@
 }
 
 .perf-val.warn {
-  color: var(--cm-yellow);
+  color: var(--cm-yellow-ink);
 }
 
 .culprits-drawer {
@@ -213,9 +213,12 @@
   border-bottom: 1px solid var(--cm-border);
 }
 
+/* Antigravity's disclosures use foreground or secondary text, not accent: the accent measured
+   4.24:1 (dark) and 4.47:1 (light) here. The extra block padding lifts the target to 24px. */
 .checkpoint-details summary {
   font-size: var(--text-xs, 0.75rem);
-  color: var(--cm-accent);
+  padding-block: 4px;
+  color: var(--cm-secondary-fg);
   cursor: pointer;
   user-select: none;
   border-radius: var(--radius-sm, 0.25rem);
@@ -278,9 +281,8 @@
   background: var(--cm-surface);
 }
 
-.mcp-card-row.disabled {
-  opacity: 0.6;
-}
+/* Disabled servers are already marked by the Off badge and the struck, muted name. Like
+   Antigravity's settings rows, don't fade the row: its switch and reload still work. */
 
 .mcp-card-info {
   display: flex;
@@ -376,16 +378,15 @@
 }
 
 .log-line.warn {
-  color: var(--cm-yellow);
+  color: var(--cm-yellow-ink);
 }
 
 .log-line.error {
   color: var(--cm-red);
 }
 
-/* Antigravity's attention-chip shape ("Setup required"): 10px medium, 10% tint, pill. The text mixes
-   20% of the text color into --cm-yellow to clear 4.5:1 on the tint in light theme, where plain
-   --cm-yellow measured 4.08:1 (Antigravity's own amber-600 text is lower still). */
+/* Antigravity's attention-chip shape ("Setup required"): 10px medium, 10% tint, pill. The text uses
+   --cm-yellow-ink: plain --cm-yellow measured 4.08:1 on this tint in light theme. */
 .cm-attention-chip {
   display: inline-flex;
   align-items: center;
@@ -395,8 +396,23 @@
   padding: 3px 6px;
   border-radius: var(--nux-radius-pill, 9999px);
   background: color-mix(in srgb, var(--cm-yellow) 10%, transparent);
-  color: color-mix(in srgb, var(--cm-yellow) 80%, var(--cm-text));
+  color: var(--cm-yellow-ink);
   white-space: nowrap;
+}
+
+/* Local patch for the kit's status badges in light theme, until antigravity-sidecar-kit fixes them
+   upstream (surfaces.css). Their text measured 3.0 to 4.4:1 on its own tint, and it is as low inside
+   Antigravity, which never sends --link and sends --error as #de5555. Same hues, darkened past 4.5:1. */
+[data-theme='light'] .agy-badge.active {
+  color: var(--cm-blue-ink);
+}
+
+[data-theme='light'] .agy-badge.error {
+  color: color-mix(in srgb, var(--cm-red) 75%, var(--agy-ink));
+}
+
+[data-theme='light'] .agy-badge.ready {
+  color: color-mix(in srgb, var(--cm-green) 80%, var(--agy-ink));
 }
 
 /* The pending spinner, for icons swapped to progress_activity. */
@@ -537,7 +553,7 @@
 }
 
 .model-badge.clickable:is(:hover, :focus-visible) {
-  background: color-mix(in srgb, var(--cm-accent) 24%, transparent);
+  background: color-mix(in srgb, currentColor 20%, transparent);
 }
 
 .model-badge.clickable:focus-visible {
@@ -630,7 +646,7 @@
 
 .thinking-bar-thinking {
   height: 100%;
-  background: color-mix(in srgb, #a855f7 85%, var(--cm-text));
+  background: var(--cm-think);
 }
 
 .thinking-sub {
@@ -690,14 +706,14 @@
 }
 
 .fit-pill.rec {
-  background: rgba(67, 128, 180, 0.16);
-  color: var(--cm-blue);
+  background: color-mix(in srgb, var(--color-blue-500, #4380b4) 10%, transparent);
+  color: var(--cm-blue-ink);
   font-weight: var(--font-weight-semibold, 600);
 }
 
 .fit-pill.rec.upgrade {
-  background: rgba(243, 201, 73, 0.16);
-  color: var(--cm-yellow);
+  background: color-mix(in srgb, var(--cm-yellow) 10%, transparent);
+  color: var(--cm-yellow-ink);
 }
 
 .fit-reason {
@@ -725,7 +741,7 @@
 }
 
 .dot.purple {
-  background: color-mix(in srgb, #a855f7 85%, var(--cm-text));
+  background: var(--cm-think);
 }
 
 .subagent-banner {
@@ -816,8 +832,8 @@
 }
 
 .subagent-depth-badge {
-  background: color-mix(in srgb, var(--cm-accent) 16%, transparent);
-  color: var(--cm-blue);
+  background: color-mix(in srgb, var(--color-blue-500, #4380b4) 10%, transparent);
+  color: var(--cm-blue-ink);
   font-family: var(--editor-font-family);
   font-weight: var(--font-weight-semibold, 600);
 }

@@ -20,10 +20,45 @@
   --cm-red: var(--status-err, var(--agy-err, #de5555));
   --cm-blue: var(--status-info, var(--color-blue-400, #6a9fcb));
   --cm-blue-dot: var(--status-info-dot, var(--color-blue-500, #4380b4));
+  /* Text on blue or yellow tints. Dark keeps Antigravity's own colors; light darkens them (below). */
+  --cm-blue-ink: var(--cm-blue);
+  --cm-yellow-ink: var(--cm-yellow);
+  /* Data colors with no theme token: defined once here, with light values below. */
+  --cm-chart-teal: #2ec4b6;
+  --cm-chart-slate: #64748b;
+  --cm-think: var(--chart-purple, #9b59b6);
   --ease-agy: var(--agy-ease, cubic-bezier(0.4, 0, 0.2, 1));
   --dur-agy: var(--agy-dur, 150ms);
   --vscode-font-family: var(--agy-font-sans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
   --editor-font-family: var(--agy-font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+}
+
+[data-theme='light'] {
+  /* Deliberate deviation: Antigravity's blue-400 badge text is about 2.4:1 on light tints, and the
+     theme's warning yellow about 4.1:1. These stay in the same hue and clear 4.5:1. */
+  --cm-blue-ink: color-mix(in srgb, var(--color-blue-500, #4380b4) 70%, var(--agy-ink));
+  --cm-yellow-ink: color-mix(in srgb, var(--cm-yellow) 80%, var(--agy-ink));
+  --cm-chart-teal: #138a7e;
+  --cm-chart-slate: #556275;
+  --cm-think: var(--chart-purple, #6f42c1);
+}
+
+/* Onyx, Antigravity's default theme: use its own secondary and muted text, which the host sends.
+   Other presets keep the 88% ink mix for both, because below it several of them (Catppuccin,
+   One Dark Pro, Solarized) drop under 4.5:1 on sunken surfaces. */
+body[data-newux-theme='onyx'] {
+  --cm-secondary-fg: var(--secondary-foreground, var(--agy-ink-soft));
+  --cm-muted: var(--muted-foreground, var(--agy-ink-soft));
+}
+
+/* Onyx Light's muted text is about 4.5:1 on sunken drawers; a 10% ink nudge clears it. */
+body[data-newux-theme='onyx'].theme-light {
+  --cm-muted: color-mix(in srgb, var(--muted-foreground, #71717a) 90%, var(--agy-ink));
+}
+
+.dot.sm.status-ok {
+  background: var(--cm-green-dot);
+  opacity: 1;
 }
 
 * {
@@ -138,8 +173,8 @@ body {
   font-size: 11px;
   line-height: 16px;
   font-weight: var(--font-weight-medium, 500);
-  background: rgba(67, 128, 180, 0.12);
-  color: var(--cm-blue);
+  background: color-mix(in srgb, var(--color-blue-500, #4380b4) 10%, transparent);
+  color: var(--cm-blue-ink);
   border: none;
   max-width: 100%;
   overflow: hidden;
@@ -148,8 +183,8 @@ body {
 }
 
 .model-badge.claude {
-  background: rgba(243, 201, 73, 0.12);
-  color: var(--cm-yellow);
+  background: color-mix(in srgb, var(--cm-yellow) 10%, transparent);
+  color: var(--cm-yellow-ink);
 }
 
 .model-badge.custom {

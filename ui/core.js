@@ -55,12 +55,26 @@
   function applyTheme(theme) {
     if (!theme || typeof theme !== 'object') return;
     const root = document.documentElement;
+    // A payload with `vars` is this sidecar's own /api/telemetry theme (resolveHostTheme). The host's
+    // theme-change message has none and is the live truth, so once one arrives it wins; server
+    // payloads then only fill in the chart colors the host never sends.
+    const fromServer = Boolean(theme.vars);
     const cv = theme.cssVariables && typeof theme.cssVariables === 'object'
       ? theme.cssVariables
-      : (!theme.vars ? theme : null);
-    if (cv && !theme.vars) {
-      hasLiveHostTheme = true;
-      lastThemeSig = JSON.stringify(theme);
+      : (!fromServer ? theme : null);
+    if (fromServer && hasLiveHostTheme) {
+      for (const [k, v] of Object.entries(cv || theme.vars)) {
+        if (k.startsWith('--chart-') && typeof v === 'string') root.style.setProperty(k, v);
+      }
+      return;
+    }
+    const sig = JSON.stringify(theme);
+    if (sig === lastThemeSig) return;
+    lastThemeSig = sig;
+    // Both sources take the native path when they carry cssVariables, so the full Onyx map
+    // (surfaces, secondary and muted text, status colors) applies even before the host speaks.
+    if (cv) {
+      if (!fromServer) hasLiveHostTheme = true;
       const isLight = theme.themeType === 'light' || theme.isDark === false;
       const bg = cv['--background'] || cv['--vscode-editor-background'] || (isLight ? '#f8f9fc' : '#101010');
       const fg = cv['--foreground'] || cv['--vscode-editor-foreground'] || (isLight ? '#121317' : '#cccccc');
@@ -95,8 +109,7 @@
       }
       return;
     }
-    if (!theme.vars || hasLiveHostTheme || JSON.stringify(theme) === lastThemeSig) return;
-    lastThemeSig = JSON.stringify(theme);
+    // Legacy: a server payload with `vars` only.
     const isLight = (theme.mode || 'dark') === 'light';
     const bg = theme.vars['--background'] || theme.vars['--cm-bg'] || (isLight ? '#f8f9fc' : '#101010');
     const fg = theme.vars['--foreground'] || theme.vars['--cm-text'] || (isLight ? '#121317' : '#cccccc');
@@ -240,9 +253,10 @@
   function focusKeyOf(el) {
     if (!el?.tagName || (typeof document !== 'undefined' && el === document.body)) return '';
     if (el.id) return `#${cssIdent(el.id)}`;
-    if (el.tagName === 'SUMMARY') {
+    if (el.tagName === 'SUMMARY' || el.classList?.contains?.('checkpoint-summary')) {
       const idx = el.closest?.('[data-cp-index]')?.getAttribute?.('data-cp-index');
-      return idx ? `details[data-cp-index="${cssString(idx)}"] > summary` : '';
+      const part = el.tagName === 'SUMMARY' ? '> summary' : '.checkpoint-summary';
+      return idx ? `details[data-cp-index="${cssString(idx)}"] ${part}` : '';
     }
     const attrs = FOCUS_KEY_ATTRS.filter((a) => el.hasAttribute?.(a))
       .map((a) => `[${a}="${cssString(el.getAttribute(a))}"]`)

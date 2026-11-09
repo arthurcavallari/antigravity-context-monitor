@@ -160,11 +160,7 @@
     if (parentTokensText) rightParts.push(`${esc(parentTokensText)} in context`);
     const runningDotHtml = runningCount > 0
       ? html`
-        <span
-          class="dot sm"
-          style="background:var(--cm-green-dot);opacity:1"
-          title="${esc(runningCount)} subagent(s) running"
-        ></span>
+        <span class="dot sm status-ok" title="${esc(runningCount)} subagent(s) running"></span>
       `
       : '';
     let cardsHtml = '';
