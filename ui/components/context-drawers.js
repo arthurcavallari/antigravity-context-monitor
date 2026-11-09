@@ -12,11 +12,14 @@
     const { model = {}, context = {}, turnInsights = {} } = data || {};
     const adv = turnInsights?.effortAdvisor;
     const lat = adv?.latestTurnFit;
-    const fitText = lat
+    let fitText = lat
       ? `${lat.status === 'optimal' ? 'Good fit' : `Try ${lat.recommendedModel}`} (${adv.optimalTurns}/${adv.totalTurns} matched)`
       : 'Good fit';
+    if (model.isCustom) fitText = 'Not checked for custom models';
     const ceilingText = context.formattedCeiling || '256k';
-    const nativeText = context.formattedNativeCeiling || model.nativeCeilingFormatted || '1.0M';
+    const nativeText = model.isCustom
+      ? 'Set by your provider'
+      : `${context.formattedNativeCeiling || model.nativeCeilingFormatted || '1.0M'} single-turn burst`;
     return html`
       <div class="model-profile-drawer">
         <div class="context-help-title">
@@ -34,7 +37,7 @@
           </div>
           <div class="model-spec-item">
             <span class="spec-label">Native Window:</span>
-            <strong>${esc(nativeText)} single-turn burst</strong>
+            <strong>${esc(nativeText)}</strong>
           </div>
           <div class="model-spec-item">
             <span class="spec-label">Max Output:</span>
@@ -50,8 +53,9 @@
   }
 
   function renderHelpDrawer(data, state = {}) {
-    if (!state.contextHelpOpen) return '';
     const { model = {}, context = {} } = data || {};
+    // The harness-vs-native explanation describes Antigravity's built-in models only
+    if (!state.contextHelpOpen || model.isCustom) return '';
     const ceilingText = context.formattedCeiling || '256k';
     const nativeText = context.formattedNativeCeiling || model.nativeCeilingFormatted || '1.0M';
     return html`
@@ -163,9 +167,10 @@
     const ps = latTurn?.phaseSplit || {};
     const flaggedTurns = Array.isArray(advisor.recentFlaggedTurns) ? advisor.recentFlaggedTurns : [];
     const fitCls = advisor.flaggedTurnsCount > 0 ? 'row-tokens warn' : 'row-tokens';
-    const fitRightLabel = advisor.flaggedTurnsCount > 0
+    let fitRightLabel = advisor.flaggedTurnsCount > 0
       ? `${advisor.optimalTurns}/${advisor.totalTurns} matched · ${advisor.flaggedTurnsCount} tip${advisor.flaggedTurnsCount === 1 ? '' : 's'}`
       : `${advisor.optimalTurns}/${advisor.totalTurns} matched`;
+    if (advisor.customTurns > 0) fitRightLabel += ` · ${advisor.customTurns} custom skipped`;
     let drawerBody = '';
     if (effortOpen) {
       const latestHtml = latTurn

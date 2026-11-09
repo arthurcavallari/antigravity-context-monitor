@@ -729,3 +729,44 @@ test('analyzeModelAndEffortFit: normalizes CODE_ACTION, file:/// URIs, and Windo
   assert.equal(artifactOnlyRes.latestTurnFit.sameFileMaxEdits, 0);
   assert.equal(artifactOnlyRes.latestTurnFit.status, 'optimal');
 });
+
+test('analyzeModelAndEffortFit: skips antigravity-add-model custom-model turns and never recommends a custom model', () => {
+  const config = {
+    clientModelConfigs: [
+      ...MOCK_MODEL_CONFIG.clientModelConfigs,
+      // Labelled like a Flash model, so it would replace "3.8 Flash" as the recommended light model
+      { label: 'Gemini 3.9 Flash (OpenRouter)', modelId: 'custom-gemini-3-9-flash-openrouter', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M512' } },
+    ],
+  };
+  const steps = [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'yes' } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' },
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'and this' } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' },
+  ];
+  const genMeta = [
+    {
+      stepIndices: [1],
+      chatModel: {
+        model: 'MODEL_PLACEHOLDER_M73',
+        timeToFirstToken: '3.2s',
+        usage: { inputTokens: '20000', outputTokens: '120', thinkingOutputTokens: '45' },
+      },
+    },
+    {
+      // A custom provider that reports no thinking tokens would otherwise read as "Lower effort"
+      stepIndices: [3],
+      chatModel: {
+        model: 'MODEL_PLACEHOLDER_M512',
+        usage: { inputTokens: '20000', outputTokens: '120', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
+      },
+    },
+  ];
+
+  const res = analyzeModelAndEffortFit(genMeta, steps, config);
+  assert.equal(res.totalTurns, 1);
+  assert.equal(res.customTurns, 1);
+  assert.equal(res.latestTurnFit.turnNumber, 1);
+  assert.equal(res.latestTurnFit.status, 'unused_effort');
+  assert.equal(res.latestTurnFit.recommendedModel, '3.8 Flash (Low)');
+});

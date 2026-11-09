@@ -142,3 +142,29 @@ test('extractAiCreditsTelemetry and setAiCreditsOverageSetting read/write credit
     rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('extractPlanUsage marks no Google quota group active for an antigravity-add-model custom model', () => {
+  const now = Date.parse('2026-10-15T16:00:00Z');
+  const quota = {
+    response: {
+      groups: [
+        { displayName: 'Gemini Models', buckets: [{ bucketId: 'gemini-5h', window: '5h', remainingFraction: 0.5 }] },
+        { displayName: 'Claude and GPT models', buckets: [{ bucketId: '3p-5h', window: '5h', remainingFraction: 0.5 }] },
+      ],
+    },
+  };
+  // "gpt" in the name would otherwise select Claude & GPT; anything else would select Gemini
+  for (const modelInfo of [
+    { modelId: 'custom-gpt-5-openrouter', label: 'GPT-5 (OpenRouter)', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
+    { modelId: 'custom-llama3-8b', label: 'Llama 3 8B (Ollama)', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
+  ]) {
+    const plan = extractPlanUsage(quota, modelInfo, {}, now);
+    assert.equal(plan.customModel, true);
+    assert.equal(plan.activeGroupId, '');
+    assert.equal(plan.groups.length, 2, 'both groups stay visible');
+  }
+
+  const builtIn = extractPlanUsage(quota, { modelId: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' }, {}, now);
+  assert.equal(builtIn.customModel, false);
+  assert.equal(builtIn.activeGroupId, 'gemini');
+});

@@ -88,7 +88,8 @@
   function renderTopHeaderAndTabs(data, state = {}, isPulseActive = false) {
     const refreshSvg = icon('refresh', 14);
     const { model = {}, context = {}, session = {}, subagents = {} } = data || {};
-    const badgeClass = model.isGemini === false ? 'model-badge claude' : 'model-badge';
+    let badgeClass = model.isGemini === false ? 'model-badge claude' : 'model-badge';
+    if (model.isCustom) badgeClass = 'model-badge custom';
     const risk = context.compactionRisk || 'normal';
     const usageCls = risk === 'warn' || risk === 'danger' ? `cw-Usage-text ${risk}` : 'cw-Usage-text';
     const ceilingText = context.formattedCeiling || '256k';
@@ -110,10 +111,12 @@
           <span class="activity-pulse ${pulseActive ? 'active' : ''}" title="${pulseTitle}"></span>
         </div>
         <div class="cw-summary-group">
-          <span class="${usageCls}" title="Cortex autocompact ceiling: ${esc(ceilingText)} · Native model window: ${esc(nativeText)}">
+          <span class="${usageCls}" title="${model.isCustom
+            ? html`Cortex autocompact ceiling: ${esc(ceilingText)} · Custom model: its window is set by your provider`
+            : html`Cortex autocompact ceiling: ${esc(ceilingText)} · Native model window: ${esc(nativeText)}`}">
             <strong>${esc(context.formattedUsed || '0')}</strong> / ${esc(ceilingText)} (${esc(context.formattedUsedPct || '0.0%')})
           </span>
-          <button id="context-help-btn" class="help-pill ${state.contextHelpOpen ? 'active' : ''}" title="Why ${esc(ceilingText)} instead of ${esc(nativeText)}?">?</button>
+          ${model.isCustom ? '' : html`<button id="context-help-btn" class="help-pill ${state.contextHelpOpen ? 'active' : ''}" title="Why ${esc(ceilingText)} instead of ${esc(nativeText)}?">?</button>`}
           <button id="refresh-btn" class="agy-icon-btn ${state.isRefreshing ? 'spinning' : ''}" title="Refresh telemetry">${refreshSvg}</button>
         </div>
       </header>
@@ -243,6 +246,9 @@
     return html`
       <div class="plan-section">
         <div class="plan-header"><span class="plan-title">Plan usage</span></div>
+        ${planUsage.customModel
+          ? html`<div class="plan-note">This conversation uses a custom model. Its requests go to your own provider and don't count against these limits.</div>`
+          : ''}
         <div class="quota-groups-grid">${groupsGridHtml}</div>
         <div class="credits-box">
           <div class="credits-info">

@@ -1169,3 +1169,41 @@ test('fetchFullTelemetry preserves cached root/L1 enrichment across >60s idle & 
   clearConversationDetails();
   clearRpcCache();
 });
+
+test('resolveModelMetadata treats antigravity-add-model custom models as neither Gemini nor Claude', () => {
+  // antigravity-add-model advertises a custom model under a borrowed Gemini provider
+  const modelConfigData = {
+    clientModelConfigs: [
+      {
+        label: 'Qwen3 Coder (Ollama)',
+        modelOrAlias: { model: 'MODEL_PLACEHOLDER_M512' },
+        modelId: 'custom-qwen3-coder',
+      },
+    ],
+  };
+  const gen = (maxContextTokens) => ({
+    plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M512' },
+    chatModel: {
+      usage: { apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
+      ...(maxContextTokens ? { chatStartMetadata: { contextWindowMetadata: { maxContextTokens } } } : {}),
+    },
+  });
+
+  const live = resolveModelMetadata(modelConfigData, gen(96_000));
+  assert.equal(live.isCustom, true);
+  assert.equal(live.isGemini, false);
+  assert.equal(live.badgeLabel, 'Qwen3 Coder (Ollama)');
+  assert.equal(live.ceiling, 96_000);
+  assert.equal(live.nativeCeiling, 96_000, 'no 1.0M Gemini window for a custom model');
+
+  const noLive = resolveModelMetadata(modelConfigData, gen(0));
+  assert.equal(noLive.ceiling, 256_000);
+  assert.equal(noLive.nativeCeiling, 256_000);
+
+  const builtIn = resolveModelMetadata(
+    { clientModelConfigs: [{ label: 'Gemini 3.8 Flash (High)', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M318' }, modelId: 'gemini-3.8-flash-high' }] },
+    { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M318' } }
+  );
+  assert.equal(builtIn.isCustom, false);
+  assert.equal(builtIn.nativeCeiling, GEMINI_NATIVE_CEILING);
+});

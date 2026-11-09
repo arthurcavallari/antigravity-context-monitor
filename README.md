@@ -34,6 +34,15 @@ Mounts natively in Antigravity's Auxiliary (right-hand) Pane (`SIDECAR_UI_ENTRYP
 - **Background Terminal Reaper**: Inspects active background terminals (`PID`, title, workspace) with one-click process termination.
 - **Sidecar Process Matrix**: Displays running/errored status and ports for all registered Antigravity sidecars with one-click restart controls.
 
+### Custom models
+Models added with [antigravity-add-model](https://github.com/vahapogut/antigravity-add-model) (IDs starting with `custom-`) run on your own provider, so the monitor doesn't treat them as Gemini or Claude:
+- The context bar uses the autocompact ceiling Antigravity reports. The model's own window is set by your provider, so no native window is shown.
+- No plan-usage group is marked **Active**, because these requests don't count against Google's limits.
+- The prompt and effort fit advisor skips these turns. Its thresholds are calibrated on Antigravity's built-in models, and it never recommends a custom model.
+- Turn telemetry reports every custom model as `custom`, so your model names never leave your machine.
+
+This is based on reading antigravity-add-model's source. It hasn't been tested live against a running add-model install.
+
 ---
 
 ## Requirements

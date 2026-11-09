@@ -230,3 +230,46 @@ test('mounts <agy-toggle-group> and <agy-switch> in linkedom with AgyUI loaded w
   assert.equal(root.querySelector('agy-toggle-group .agy-toggle-item.active')?.getAttribute('data-tab'), 'mcp');
   assert.ok(root.querySelector('#ai-overage-toggle agy-switch.agy-switch.on'));
 });
+
+test('custom models get a neutral badge, no Gemini window claims, and a plan-usage note', () => {
+  const data = {
+    model: { badgeLabel: 'Qwen3 Coder (Ollama)', label: 'Qwen3 Coder (Ollama)', isCustom: true, isGemini: false },
+    context: { formattedUsed: '42.0k', formattedCeiling: '96k', formattedNativeCeiling: '96k', formattedUsedPct: '43.8%' },
+  };
+  const header = ui.renderTopHeaderAndTabs(data, { activeTab: 'context' }, false);
+  assert.ok(header.includes('class="model-badge custom clickable"'));
+  assert.ok(header.includes('Custom model: its window is set by your provider'));
+  assert.ok(!header.includes('context-help-btn'));
+
+  const drawers = ui.renderHeaderDrawers(data, { modelProfileOpen: true, contextHelpOpen: true });
+  assert.ok(drawers.includes('Set by your provider'));
+  assert.ok(drawers.includes('Not checked for custom models'));
+  assert.ok(!drawers.includes('single-turn burst'));
+  assert.ok(!drawers.includes('Cortex Harness'));
+
+  const tab = ui.renderContextTab({
+    context: {},
+    planUsage: {
+      customModel: true,
+      activeGroupId: '',
+      groups: [{ id: 'gemini', displayName: 'Gemini Models', fiveHour: {}, weekly: {} }],
+    },
+    turnInsights: {
+      effortAdvisor: {
+        totalTurns: 1,
+        optimalTurns: 1,
+        flaggedTurnsCount: 0,
+        customTurns: 2,
+        latestTurnFit: { turnNumber: 1, promptPreview: 'p', status: 'optimal', badge: 'Good fit', shortModelLabel: 'Flash (Low)', reason: 'r', phaseSplit: {} },
+        recentFlaggedTurns: [],
+      },
+    },
+  });
+  assert.ok(tab.includes('class="plan-note"'));
+  assert.ok(!tab.includes('Active</span>'));
+  assert.ok(tab.includes('1/1 matched · 2 custom skipped'));
+
+  const builtIn = ui.renderTopHeaderAndTabs({ model: { badgeLabel: 'Gemini 4 Argon (High)' }, context: {} }, { activeTab: 'context' }, false);
+  assert.ok(builtIn.includes('context-help-btn'));
+  assert.ok(builtIn.includes('class="model-badge clickable"'));
+});
