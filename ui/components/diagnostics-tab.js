@@ -2,6 +2,7 @@
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
   const { esc, icon, formatBadgeLabel, html, rawHtml, setHtml, switchHtml, setSwitch, focusKeyOf, restoreFocus } = cm;
+  const LEVEL_PREFIX = { error: 'Error: ', warn: 'Warning: ' };
   const MAX_LIVE_LOG_LINES = 80;
   const MAX_PAUSED_LOG_LINES = 300;
   const SAFE_ID_RE = /^[a-zA-Z0-9._-]+$/;
@@ -91,9 +92,9 @@
     const autoScroll = Boolean(uiState.logAutoScroll);
     const hideStyle = tailOn ? '' : (cm.rawHtml ? cm.rawHtml(' style="display:none"') : ' style="display:none"');
     return html`
-      <span class="plan-title">
+      <h3 class="plan-title">
         Task Logs <span id="diag-log-count-pill" class="agy-count-pill">${tailOn ? logsCount : 'Paused'}</span>
-      </span>
+      </h3>
       <div class="mcp-card-actions" style="flex-wrap:wrap">
         <button id="diag-clear-logs-btn" type="button" class="agy-btn agy-btn-secondary"${hideStyle}>Clear</button>
         <span id="diag-autoscroll-row" class="cm-switch-row"${hideStyle}>
@@ -216,11 +217,11 @@
     return html`
       ${errorHtml}
       <div class="plan-header" style="margin:12px 0 8px">
-        <span class="plan-title">Active Background Terminals <span class="agy-count-pill">${terminals.length}</span></span>
+        <h3 class="plan-title">Active Background Terminals <span class="agy-count-pill">${terminals.length}</span></h3>
       </div>
       <div>${terminalsHtml}</div>
       <div class="plan-header" style="margin:12px 0 8px">
-        <span class="plan-title">Sidecar Processes <span class="agy-count-pill">${sidecars.length}</span></span>
+        <h3 class="plan-title">Sidecar Processes <span class="agy-count-pill">${sidecars.length}</span></h3>
       </div>
       <div>${sidecarsHtml}</div>
     `;
@@ -307,7 +308,12 @@
       } else {
         let logEl = document.getElementById('diag-log-console');
         if (!logEl) {
-          setHtml(bodyEl, html`<div id="diag-log-console" class="log-console"></div>`);
+          // role="log" names the region; aria-live="off" keeps a 1.5 s stream from flooding speech.
+          // tabindex lets keyboard users scroll it.
+          setHtml(
+            bodyEl,
+            html`<div id="diag-log-console" class="log-console" role="log" aria-live="off" aria-label="Language Server log" tabindex="0"></div>`,
+          );
           logEl = document.getElementById('diag-log-console');
           state.renderedLogCount = 0;
           logEl?.addEventListener('scroll', () => {
@@ -323,7 +329,11 @@
           if (state.renderedLogCount !== state.logBuffer.length) {
             setHtml(
               logEl,
-              state.logBuffer.map((l) => html`<div class="log-line ${esc(l.level || 'info')}">${esc(l.text)}</div>`).join(''),
+              state.logBuffer.map((l) => {
+                // Severity is said, not only colored (WCAG 1.4.1).
+                const prefix = LEVEL_PREFIX[l.level] ? html`<span class="cm-sr-only">${LEVEL_PREFIX[l.level]}</span>` : '';
+                return html`<div class="log-line ${esc(l.level || 'info')}">${prefix}${esc(l.text)}</div>`;
+              }).join(''),
             );
             state.renderedLogCount = state.logBuffer.length;
           }

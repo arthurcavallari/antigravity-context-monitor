@@ -85,7 +85,7 @@
   color: var(--cm-muted);
   width: 14px;
   height: 14px;
-  transition: transform 0.18s ease, color var(--dur-agy) var(--ease-agy);
+  transition: transform var(--dur-agy) var(--ease-agy), color var(--dur-agy) var(--ease-agy);
   flex-shrink: 0;
 }
 
@@ -372,17 +372,23 @@
   gap: 2px;
 }
 
+/* Wrap long tokens only where needed (not mid-word everywhere), and mark severity with a stripe as
+   well as color. */
 .log-line {
   color: var(--cm-muted);
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  padding-left: 8px;
+  border-left: 2px solid transparent;
 }
 
 .log-line.warn {
   color: var(--cm-yellow-ink);
+  border-left-color: var(--cm-yellow);
 }
 
 .log-line.error {
   color: var(--cm-red);
+  border-left-color: var(--cm-red);
 }
 
 /* Antigravity's attention-chip shape ("Setup required"): 10px medium, 10% tint, pill. The text uses

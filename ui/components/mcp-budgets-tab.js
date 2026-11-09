@@ -1,9 +1,11 @@
 /** @fileoverview Renders Tab 2 (Skills & Rules Token Budgets + Live MCP Server Controls). */
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
-  const { esc, icon, formatBadgeLabel, html, setHtml, switchHtml, setSwitch } = cm;
+  const { esc, icon, formatBadgeLabel, html, rawHtml, setHtml, switchHtml, setSwitch } = cm;
+  // Pending reloads stay focusable (aria-disabled, not disabled) and announce themselves as busy.
+  const busyAttrs = (busy) => (busy ? rawHtml(' aria-disabled="true" aria-busy="true"') : '');
 
-  function renderMcpServerRow(srv, refreshSvg) {
+  function renderMcpServerRow(srv, refreshSvg, busy = false) {
     const badgeCls = srv.isError ? 'agy-badge error' : (srv.enabled ? 'agy-badge ready' : 'agy-badge off');
     const pluginRef = srv.pluginName || srv.pluginId || '';
     const hangarBtn = pluginRef
@@ -27,7 +29,13 @@
         </div>
         <div class="mcp-card-actions">
           ${hangarBtn}
-          <button class="agy-icon-btn mcp-refresh-btn" data-server="${esc(srv.fullServerName)}" title="Reload ${esc(srv.serverName)}">
+          <button
+            type="button"
+            class="agy-icon-btn mcp-refresh-btn ${busy ? 'spinning' : ''}"
+            data-server="${esc(srv.fullServerName)}"
+            aria-label="Reload ${esc(srv.serverName)}"
+            title="Reload ${esc(srv.serverName)}"${busyAttrs(busy)}
+          >
             ${refreshSvg}
           </button>
           ${switchHtml({
@@ -40,7 +48,9 @@
     `;
   }
 
-  function renderMcpBudgetsTab(data) {
+  function renderMcpBudgetsTab(data, uiState = {}) {
+    const pending = uiState.pendingMcp;
+    const isBusy = (key) => Boolean(pending?.has?.(key) || pending?.has?.('*'));
     const budgets = data?.turnInsights?.budgets || {};
     const skillsB = budgets.skills || { formattedUsed: '0', formattedLimit: '20.0k', pct: 0, formattedPct: '0.0%' };
     const rulesB = budgets.rules || { formattedUsed: '0', formattedLimit: '20.0k', pct: 0, formattedPct: '0.0%' };
@@ -49,7 +59,7 @@
     const servers = Array.isArray(catalog.servers) ? catalog.servers : [];
     const refreshSvg = icon('refresh', 14);
     const serversHtml = servers.length
-      ? html`<div class="mcp-list-card">${servers.map((srv) => renderMcpServerRow(srv, refreshSvg))}</div>`
+      ? html`<div class="mcp-list-card">${servers.map((srv) => renderMcpServerRow(srv, refreshSvg, isBusy(srv.fullServerName)))}</div>`
       : html`<div class="empty-hint">No MCP servers configured</div>`;
     const skillsFillPct = Math.max(0, Math.min(100, skillsB.pct || 0));
     const rulesFillPct = Math.max(0, Math.min(100, rulesB.pct || 0));
@@ -79,7 +89,7 @@
     return html`
       <div class="sub-card">
         <div class="plan-header" style="margin-bottom:10px">
-          <span class="plan-title">Context usage</span>
+          <h3 class="plan-title">Context usage</h3>
           <span class="telemetry-pill" title="Single user message input cap">Max msg: ${esc(budgets.formattedMaxChatInput || '16.4k')}</span>
         </div>
         <div class="quota-item">
@@ -103,19 +113,35 @@
         ${skillInjHtml}
       </div>
       <div class="plan-header" style="margin:14px 0 8px">
-        <span class="plan-title">MCP Servers <span class="agy-count-pill">${servers.length}</span></span>
-        <button id="mcp-refresh-all-btn" class="agy-btn agy-btn-secondary" title="Refresh all MCP servers">
-          ${refreshSvg}<span>Reload All</span>
+        <h3 class="plan-title">MCP Servers <span class="agy-count-pill">${servers.length}</span></h3>
+        <button type="button" id="mcp-refresh-all-btn" class="agy-btn agy-btn-secondary has-icon" title="Reload all MCP servers"${busyAttrs(isBusy('*'))}>
+          ${isBusy('*') ? icon('progress_activity', 14, 'cm-spin') : refreshSvg}<span>Reload All</span>
         </button>
       </div>
       <div>${serversHtml}</div>
     `;
   }
 
+  // Runs one reload at a time per server (or for all of them), with the button busy until it ends.
+  async function withPendingMcp(state, key, render, work) {
+    if (!state.pendingMcp) state.pendingMcp = new Set();
+    if (state.pendingMcp.has(key) || state.pendingMcp.has('*')) return;
+    state.pendingMcp.add(key);
+    render();
+    try {
+      await work();
+    } finally {
+      state.pendingMcp.delete(key);
+      render();
+    }
+  }
+
   async function handleMcpToggle(btn, state, computeTabBodyHtml, runAction, refreshTelemetry) {
     const serverName = btn.getAttribute('data-server');
     const next = btn.getAttribute('data-enabled') !== '1';
     if (!serverName) return;
+    // A poll already in flight would render the old state back over the optimistic flip.
+    cm.invalidateTelemetry?.();
     const srv = (state.latestData?.mcpCatalog?.servers || []).find(
       (s) => s.fullServerName === serverName || s.serverName === serverName,
     );
@@ -159,7 +185,11 @@
       return true;
     }
     if (target.closest('#mcp-refresh-all-btn')) {
-      await runAction('Could not refresh MCP servers', '/api/mcp/refresh', {});
+      await withPendingMcp(state, '*', render, async () => {
+        if (await runAction('Could not reload MCP servers', '/api/mcp/refresh', {})) {
+          cm.showToast?.('Reloaded all MCP servers');
+        }
+      });
       await refreshTelemetry(true);
       return true;
     }
@@ -167,7 +197,12 @@
     if (mcpRefreshBtn) {
       const serverName = mcpRefreshBtn.getAttribute('data-server');
       if (serverName) {
-        await runAction(`Could not refresh ${serverName}`, '/api/mcp/refresh', { serverName });
+        const label = (state.latestData?.mcpCatalog?.servers || []).find((s) => s.fullServerName === serverName)?.serverName || serverName;
+        await withPendingMcp(state, serverName, render, async () => {
+          if (await runAction(`Could not reload ${label}`, '/api/mcp/refresh', { serverName })) {
+            cm.showToast?.(`Reloaded ${label}`);
+          }
+        });
         await refreshTelemetry(true);
       }
       return true;
