@@ -548,3 +548,61 @@ test('reportSettledTurnTelemetry deduplicates concurrent polls, persists across 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('extractSettledTurnTelemetryRecords reports antigravity-add-model custom models under one generic identity', () => {
+  clearReportedTurnKeys();
+  // antigravity-add-model lists a custom model with a slug of the user's own model name and a Gemini provider
+  const modelConfigData = {
+    clientModelConfigs: [
+      {
+        label: 'Acme Corp Fine-tune (High)',
+        modelId: 'custom-ft-gpt-4o-mini-acme-corp-abc123',
+        modelOrAlias: { model: 'MODEL_PLACEHOLDER_M512' },
+      },
+    ],
+  };
+  const steps = [
+    {
+      type: 'CORTEX_STEP_TYPE_USER_INPUT',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      userInput: { userResponse: 'hello' },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      plannerResponse: { response: 'x'.repeat(120) },
+    },
+  ];
+  const generators = [
+    {
+      stepIndices: [1],
+      chatModel: {
+        model: 'MODEL_PLACEHOLDER_M512',
+        usage: {
+          inputTokens: '4000',
+          outputTokens: '40',
+          responseOutputTokens: '40',
+          apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+        },
+      },
+    },
+  ];
+
+  const records = extractSettledTurnTelemetryRecords({
+    cascadeId: 'conv-custom',
+    generatorMetadataList: generators,
+    steps,
+    modelConfigData,
+  });
+  assert.equal(records.length, 2);
+  for (const rec of records) {
+    assert.equal(rec.modelId, 'custom');
+    assert.equal(rec.apiProvider, 'API_PROVIDER_CUSTOM');
+  }
+  assert.equal(records[0].effort, 'High');
+  assert.equal(records[0].outputTokens, 40);
+  const serialized = JSON.stringify(records).toLowerCase();
+  assert.ok(!serialized.includes('acme'));
+  assert.ok(!serialized.includes('gpt-4o'));
+  clearReportedTurnKeys();
+});
