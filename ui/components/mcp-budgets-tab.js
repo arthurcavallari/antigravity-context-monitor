@@ -151,8 +151,9 @@
       try {
         await apiCall('/api/ai-credits/toggle', { enabled: next });
         await refreshTelemetry(false);
-      } catch {
+      } catch (err) {
         state.latestData.planUsage.aiCredits.useAiCredits = !next;
+        cm.showToast?.(`Could not turn AI credit overages ${next ? 'on' : 'off'}: ${err.message}`, true);
         render();
       }
       return true;

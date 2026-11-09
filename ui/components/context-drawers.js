@@ -1,7 +1,7 @@
 /** @fileoverview Expandable drawers for the Context Monitor header and Context tab. */
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
-  const { esc, icon, html } = cm;
+  const { esc, html } = cm;
   const HELP_ENTRIES = [
     { key: 'ceiling', title: 'Autocompact Ceiling' },
     { key: 'native', title: 'Native Model Window' },
@@ -29,7 +29,7 @@
         <div class="model-spec-grid">
           <div class="model-spec-item">
             <span class="spec-label">Reasoning Tier:</span>
-            <strong>${esc(model.thinkingEffort || 'Standard')}</strong>
+            <strong>${esc(model.thinkingEffort || (model.isCustom ? 'Set by your provider' : 'Standard'))}</strong>
           </div>
           <div class="model-spec-item">
             <span class="spec-label">Harness Ceiling:</span>
@@ -41,7 +41,9 @@
           </div>
           <div class="model-spec-item">
             <span class="spec-label">Max Output:</span>
-            <strong>${esc(model.maxOutputFormatted || '65.5k')} tokens/turn</strong>
+            <strong>${model.maxOutputFormatted
+              ? html`${esc(model.maxOutputFormatted)} tokens/turn`
+              : (model.isCustom ? 'Set by your provider' : '65.5k tokens/turn')}</strong>
           </div>
           <div class="model-spec-item" style="grid-column:span 2">
             <span class="spec-label">Prompt Fit:</span>
@@ -83,7 +85,7 @@
     if (mcpServers.length === 0) return '';
     const rowsHtml = mcpExpanded
       ? html`
-        <div class="mcp-tree">
+        <div id="mcp-tree" class="mcp-tree">
           ${mcpServers.map((s) => html`
             <div class="mcp-server-row">
               <span class="mcp-server-name" title="${esc(s.fullServerName)}">
@@ -97,13 +99,13 @@
       `
       : '';
     return html`
-      <div id="mcp-collapse-toggle" role="button" tabindex="0" aria-expanded="${mcpExpanded ? 'true' : 'false'}" class="breakdown-row collapsible-toggle" title="Click to expand/collapse MCP servers">
-        <div class="row-label muted">
-          <span class="chevron ${mcpExpanded ? 'open' : ''}">${icon('chevron_right', 14)}</span>
-          <span>MCP tools (${mcpServers.length} servers)</span>
-        </div>
-        <div class="row-tokens">${esc(mcp.totalToolCount)} tools · ${esc(mcp.formattedTotalTokens)}</div>
-      </div>
+      ${cm.drawerToggleHtml({
+        id: 'mcp-collapse-toggle',
+        controls: 'mcp-tree',
+        expanded: mcpExpanded,
+        label: `MCP tools (${mcpServers.length} servers)`,
+        summary: `${mcp.totalToolCount ?? 0} tools · ${mcp.formattedTotalTokens ?? ''}`,
+      })}
       ${rowsHtml}
     `;
   }
@@ -117,7 +119,7 @@
       : html`${esc(compaction.count)} total`;
     const cardsHtml = compactionsExpanded
       ? html`
-        <div class="culprits-drawer">
+        <div id="compactions-drawer" class="culprits-drawer">
           ${checkpoints.map((cp) => {
             const isOpen = openCheckpoints instanceof Set && openCheckpoints.has(String(cp.index));
             const deltaText = cp.beforeTokens > 0
@@ -145,13 +147,14 @@
       `
       : '';
     return html`
-      <div id="compactions-collapse-toggle" role="button" tabindex="0" aria-expanded="${compactionsExpanded ? 'true' : 'false'}" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect session compaction checkpoints and summaries">
-        <div class="row-label muted">
-          <span class="chevron ${compactionsExpanded ? 'open' : ''}">${icon('chevron_right', 14)}</span>
-          <span>Compaction checkpoints (${compaction.count})</span>
-        </div>
-        <div class="row-tokens">${latestDropText}</div>
-      </div>
+      ${cm.drawerToggleHtml({
+        id: 'compactions-collapse-toggle',
+        controls: 'compactions-drawer',
+        expanded: compactionsExpanded,
+        label: `Compaction checkpoints (${compaction.count})`,
+        summary: latestDropText,
+        style: 'margin-top:4px',
+      })}
       ${cardsHtml}
     `;
   }
@@ -166,7 +169,6 @@
     const latTurn = advisor.latestTurnFit;
     const ps = latTurn?.phaseSplit || {};
     const flaggedTurns = Array.isArray(advisor.recentFlaggedTurns) ? advisor.recentFlaggedTurns : [];
-    const fitCls = advisor.flaggedTurnsCount > 0 ? 'row-tokens warn' : 'row-tokens';
     let fitRightLabel = advisor.flaggedTurnsCount > 0
       ? `${advisor.optimalTurns}/${advisor.totalTurns} matched · ${advisor.flaggedTurnsCount} tip${advisor.flaggedTurnsCount === 1 ? '' : 's'}`
       : `${advisor.optimalTurns}/${advisor.totalTurns} matched`;
@@ -233,16 +235,23 @@
           </div>
         `
         : '';
-      drawerBody = html`<div class="culprits-drawer">${latestHtml}${flaggedHtml}</div>`;
+      const emptyHtml = !latestHtml && !flaggedHtml
+        ? html`<div class="empty-hint">${advisor.customTurns > 0
+          ? 'Prompt fit is not checked for custom models.'
+          : 'No prompts to compare yet.'}</div>`
+        : '';
+      drawerBody = html`<div id="effort-fit-drawer" class="culprits-drawer">${latestHtml}${flaggedHtml}${emptyHtml}</div>`;
     }
     return html`
-      <div id="effort-fit-collapse-toggle" role="button" tabindex="0" aria-expanded="${effortOpen ? 'true' : 'false'}" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect per-prompt model &amp; thinking effort fit">
-        <div class="row-label muted">
-          <span class="chevron ${effortOpen ? 'open' : ''}">${icon('chevron_right', 14)}</span>
-          <span>Prompt &amp; effort fit</span>
-        </div>
-        <div class="${fitCls}">${esc(fitRightLabel)}</div>
-      </div>
+      ${cm.drawerToggleHtml({
+        id: 'effort-fit-collapse-toggle',
+        controls: 'effort-fit-drawer',
+        expanded: effortOpen,
+        label: 'Prompt & effort fit',
+        summary: fitRightLabel,
+        summaryCls: advisor.flaggedTurnsCount > 0 ? 'warn' : '',
+        style: 'margin-top:4px',
+      })}
       ${drawerBody}
     `;
   }
@@ -259,16 +268,25 @@
       : '';
     const stepsHtml = topSteps.length
       ? topSteps.map((st) => {
-        const rawSubIdAttr = st.subagentId
-          ? ` role="button" tabindex="0" data-subagent-id="${esc(st.subagentId)}" title="Click to inspect subagent (${esc(st.subagentId)})"`
-          : '';
-        const subIdAttr = rawSubIdAttr && cm.rawHtml ? cm.rawHtml(rawSubIdAttr) : rawSubIdAttr;
+        const labelText = st.label || st.name || '';
+        // A subagent step's title is the card's one button, stretched over the card (see components.css).
+        const labelHtml = st.subagentId
+          ? html`
+            <button
+              type="button"
+              class="fit-prompt subagent-open no-focus-ring"
+              data-subagent-id="${esc(st.subagentId)}"
+              aria-label="Inspect subagent ${labelText}"
+              title="${labelText}"
+            >${labelText}</button>
+          `
+          : html`<span class="fit-prompt" title="${labelText}">${labelText}</span>`;
         return html`
-          <div class="${st.subagentId ? 'fit-card subagent-culprit clickable' : 'fit-card'}" style="margin-bottom:5px"${subIdAttr}>
+          <div class="${st.subagentId ? 'fit-card subagent-culprit clickable' : 'fit-card'}" style="margin-bottom:5px">
             <div class="fit-header">
               <div class="fit-flow" style="min-width:0;flex:1;flex-wrap:nowrap">
                 <span class="fit-pill">${esc(st.badge || 'Step')}</span>
-                <span class="fit-prompt" title="${esc(st.label || st.name)}">${esc(st.label || st.name)}</span>
+                ${labelHtml}
                 ${st.stepRef ? html`<span class="thinking-sub" style="flex-shrink:0">${esc(st.stepRef)}</span>` : ''}
               </div>
               <span class="culprit-tokens">${esc(st.formattedTokens)}</span>
@@ -293,7 +311,7 @@
     `);
     const drawerContent = culpritsOpen
       ? html`
-        <div class="culprits-drawer">
+        <div id="culprits-drawer" class="culprits-drawer">
           <div>
             <div class="culprit-group-title">Largest Active Conversation Steps</div>
             ${stepsHtml}
@@ -306,13 +324,14 @@
       `
       : '';
     return html`
-      <div id="culprits-collapse-toggle" role="button" tabindex="0" aria-expanded="${culpritsOpen ? 'true' : 'false'}" class="breakdown-row collapsible-toggle" style="margin-top:4px" title="Inspect largest steps and system prompt sections in active memory">
-        <div class="row-label muted">
-          <span class="chevron ${culpritsOpen ? 'open' : ''}">${icon('chevron_right', 14)}</span>
-          <span>Largest items in context</span>
-        </div>
-        <div class="row-tokens">${culpritsRightLabel}</div>
-      </div>
+      ${cm.drawerToggleHtml({
+        id: 'culprits-collapse-toggle',
+        controls: 'culprits-drawer',
+        expanded: culpritsOpen,
+        label: 'Largest items in context',
+        summary: culpritsRightLabel,
+        style: 'margin-top:4px',
+      })}
       ${drawerContent}
     `;
   }

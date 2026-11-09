@@ -3,6 +3,8 @@
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
   const { esc, icon, html, rawHtml, setHtml, switchHtml } = cm;
   const TABS = [['context', 'Context'], ['mcp', 'MCP & Budgets'], ['diagnostics', 'Diagnostics']];
+  // Antigravity colors quota by what's left: red below 10%, yellow below 25%, green otherwise.
+  const quotaLevel = (remainingPct) => (remainingPct < 10 ? 'danger' : remainingPct < 25 ? 'warn' : 'ok');
   const DRAWER_TOGGLES = {
     '#model-badge-btn': 'modelProfileOpen',
     '#context-help-btn': 'contextHelpOpen',
@@ -41,6 +43,7 @@
       return true;
     }
     if (target.closest('#refresh-btn')) {
+      if (state.isRefreshing) return true;
       refreshTelemetry(true);
       if (state.activeTab === 'diagnostics') refreshDiagnostics();
       return true;
@@ -136,7 +139,17 @@
               title="Why ${esc(ceilingText)} instead of ${esc(nativeText)}?"
             >?</button>
           `}
-          <button id="refresh-btn" class="agy-icon-btn ${state.isRefreshing ? 'spinning' : ''}" title="Refresh telemetry">${refreshSvg}</button>
+          ${state.syncError
+            ? html`<span class="cm-attention-chip" role="status" title="Last refresh failed: ${esc(state.syncError)}">Stale</span>`
+            : ''}
+          <button
+            type="button"
+            id="refresh-btn"
+            class="agy-icon-btn ${state.isRefreshing ? 'spinning' : ''}"
+            aria-label="Refresh telemetry"
+            ${state.isRefreshing ? rawHtml('aria-disabled="true"') : ''}
+            title="Refresh telemetry"
+          >${refreshSvg}</button>
         </div>
       </header>
       ${cm.renderHeaderDrawers ? cm.renderHeaderDrawers(data, state) : ''}
@@ -158,7 +171,8 @@
             tabindex="${activeTab === id ? '0' : '-1'}"
             class="agy-toggle-item ${activeTab === id ? 'active' : ''}"
             data-tab="${id}"
-          >${label}</button>
+            title="${label}"
+          ><span class="tab-label">${label}</span></button>
         `)}
       </agy-toggle-group>
     `;
@@ -242,7 +256,6 @@
 
     const groupsGridHtml = rawGroups.map((grp) => {
       const isAct = grp.id === planUsage.activeGroupId;
-      const fillCls = grp.id === 'claude_gpt' ? 'quota-fill claude' : 'quota-fill';
       const fh = grp.fiveHour || {};
       const wk = grp.weekly || {};
       const fhFill = Math.max(0, Math.min(100, fh.effectivePct ?? fh.remainingPct ?? 0));
@@ -258,14 +271,14 @@
               <span class="quota-meta">5-hour limit</span>
               <span class="quota-meta">${esc(fh.statusText || '—')}</span>
             </div>
-            <div class="quota-track"><div class="${fillCls}" style="width:${fhFill}%"></div></div>
+            <div class="quota-track" aria-hidden="true"><div class="quota-fill ${quotaLevel(fhFill)}" style="width:${fhFill}%"></div></div>
           </div>
           <div class="quota-item">
             <div class="quota-row">
               <span class="quota-meta">Weekly limit</span>
               <span class="quota-meta">${esc(wk.statusText || '—')}</span>
             </div>
-            <div class="quota-track"><div class="${fillCls}" style="width:${wkFill}%"></div></div>
+            <div class="quota-track" aria-hidden="true"><div class="quota-fill ${quotaLevel(wkFill)}" style="width:${wkFill}%"></div></div>
           </div>
         </div>
       `;
@@ -294,8 +307,14 @@
             <div class="credits-sub">${sessionBurnText}</div>
           </div>
           <span class="cm-switch-row">
-            <label id="ai-overage-label" for="ai-overage-toggle">Enable AI credit overages</label>
-            ${switchHtml({ on: overageOn, attrs: 'id="ai-overage-toggle" aria-labelledby="ai-overage-label"' })}
+            <span class="cm-switch-text">
+              <label id="ai-overage-label" for="ai-overage-toggle">Enable AI credit overages</label>
+              <span id="ai-overage-desc" class="credits-sub">Uses AI credits only after your model quota runs out.</span>
+            </span>
+            ${switchHtml({
+              on: overageOn,
+              attrs: 'id="ai-overage-toggle" aria-labelledby="ai-overage-label" aria-describedby="ai-overage-desc"',
+            })}
           </span>
         </div>
       </div>
@@ -344,7 +363,7 @@
             <span class="${isFree ? 'dot hollow' : 'dot'}" ${dotStyle}></span>
             <span>${esc(c.label)}</span>
           </div>
-          <div class="row-tokens">${esc(c.formattedTokens)}</div>
+          <div class="row-tokens" data-pct="${esc(c.formattedPct)}">${esc(c.formattedTokens)}</div>
           <div class="${isDeferred ? 'row-pct muted' : 'row-pct'}${riskCls}">${esc(c.formattedPct)}</div>
         </div>
       `;

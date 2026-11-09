@@ -48,6 +48,9 @@
     logBuffer: [],
     renderedLogCount: 0,
     isRefreshing: false,
+    syncError: '',
+    diagError: '',
+    pendingDiag: new Set(),
     lastTotalTokens: null,
     lastCascadeId: '',
     lastRootCascadeId: '',
@@ -64,7 +67,6 @@
   let telemetrySeq = 0;
   let telemetryInFlight = false;
   let diagInFlight = null;
-  let pendingConfirm = { key: '', until: 0 };
   let lastSeenMutationAt = 0;
   const isPinnedToSubagent = () => Boolean(
     state.pinnedCascadeId && (
@@ -92,22 +94,13 @@
   );
   const showActionMessage = (text, isError = true) => window.ContextMonitor.showToast?.(text, isError, ACTION_MSG_MS);
 
-  function confirmAction(key, message) {
-    if (pendingConfirm.key === key && Date.now() < pendingConfirm.until) {
-      pendingConfirm = { key: '', until: 0 };
-      showActionMessage('', false);
-      return true;
-    }
-    pendingConfirm = { key, until: Date.now() + ACTION_MSG_MS };
-    showActionMessage(`${message} Click again to confirm.`, false);
-    return false;
-  }
-
   async function runAction(failureText, path, body) {
     try {
       await apiCall(path, body);
+      return true;
     } catch (err) {
       showActionMessage(`${failureText}: ${err.message}`);
+      return false;
     }
   }
 
@@ -116,7 +109,7 @@
     if (!target || typeof target.closest !== 'function') return;
     if (handleContextClick?.(target, state, resetPinTracking, refreshTelemetry, refreshDiagnostics, render)) return;
     if (await handleMcpAction?.(target, state, computeTabBodyHtml, runAction, refreshTelemetry, apiCall, render)) return;
-    await handleDiagnosticsAction?.(target, e, state, confirmAction, runAction, refreshDiagnostics);
+    await handleDiagnosticsAction?.(target, e, state, runAction, refreshDiagnostics);
   }
 
   function render() {
@@ -185,12 +178,14 @@
         state.diagData = await apiCall('/api/diagnostics', {
           includeLogs: state.logTailingEnabled,
         });
+        state.diagError = '';
         if (state.logTailingEnabled && Array.isArray(state.diagData?.logs)) {
           mergeIncomingLogs(state, state.diagData.logs);
         }
         render();
-      } catch {
-        /* ignore */
+      } catch (err) {
+        state.diagError = err?.message || 'Diagnostics unavailable';
+        render();
       } finally {
         diagInFlight = null;
       }
@@ -233,27 +228,26 @@
       state.lastTotalTokens = totalUsed;
       state.latestData = data;
       state.isRefreshing = false;
+      state.syncError = '';
       render();
     } catch (err) {
       if (reqId !== telemetrySeq) return;
       state.isRefreshing = false;
+      state.syncError = err?.message || 'Telemetry unavailable';
       if (!state.latestData && appRoot) {
         setHtml(appRoot, html`<div class="error-banner" role="alert">Telemetry sync error: ${esc(err.message)}</div>`);
+        return;
       }
+      // Keep showing the last numbers, but mark them stale and stop the spinner.
+      if (manual) showActionMessage(`Could not refresh telemetry: ${state.syncError}`);
+      render();
     } finally {
       if (reqId === telemetrySeq) telemetryInFlight = false;
     }
   }
 
+  // Every control is a real <button>, so Enter and Space need no handler of their own.
   appRoot?.addEventListener('click', handleAppClick);
-  appRoot?.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    const target = e.target?.nodeType === 3 ? e.target.parentElement : e.target;
-    const roleBtn = target?.closest?.('[role="button"], .collapsible-toggle');
-    if (!roleBtn || roleBtn.tagName === 'BUTTON') return;
-    e.preventDefault();
-    handleAppClick(e);
-  });
   // Escape closes the header drawers. Focus stays where it is; the header re-render restores it by id.
   document.addEventListener?.('keydown', (e) => {
     if (e.key !== 'Escape' || e.defaultPrevented || !(state.modelProfileOpen || state.contextHelpOpen)) return;

@@ -12,6 +12,8 @@
 }
 
 #tab-nav .agy-toggle-item {
+  min-width: 0;
+  justify-content: safe center;
   height: 24px;
   padding: 0 8px;
   border-radius: var(--nux-radius-pill, var(--agy-radius-pill, 9999px));
@@ -20,6 +22,14 @@
   font-size: var(--text-xs, 0.75rem);
   line-height: 1rem;
   font-weight: var(--font-weight-medium, 500);
+}
+
+/* Narrow panes: a label that doesn't fit ends in an ellipsis instead of clipping on both sides. */
+#tab-nav .tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #tab-nav .agy-toggle-item:hover:not(:disabled) {
@@ -37,8 +47,13 @@
   }
 }
 
+/* A real <button> laid out as a breakdown row: reset its own look, keep the row's grid. */
 .collapsible-toggle {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(6rem, 1fr) minmax(0, auto);
+  background: none;
+  border: 0;
+  color: inherit;
+  text-align: inherit;
   cursor: pointer;
   user-select: none;
   border-radius: var(--radius-md, 0.375rem);
@@ -46,6 +61,12 @@
   margin: 2px -4px 0;
   outline: none;
   transition: background-color var(--dur-agy) var(--ease-agy);
+}
+
+.collapsible-toggle .row-tokens {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .collapsible-toggle:is(:hover, :focus-visible) {
@@ -73,9 +94,10 @@
   color: var(--cm-text);
 }
 
+/* Five cells, laid out without an orphan: 2+2+1(wide), 3+2(Retries wide), or one row of 5. */
 .perf-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
   padding: 8px 10px;
@@ -83,6 +105,26 @@
   background: var(--cm-surface);
   border: 1px solid var(--cm-border);
   font-variant-numeric: tabular-nums;
+}
+
+.perf-strip > .perf-cell:last-child {
+  grid-column: span 2;
+}
+
+@media (min-width: 340px) {
+  .perf-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 520px) {
+  .perf-strip {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .perf-strip > .perf-cell:last-child {
+    grid-column: auto;
+  }
 }
 
 .perf-cell {
@@ -258,6 +300,20 @@
   color: var(--cm-text);
 }
 
+/* text-overflow can't truncate the text inside an inline-flex box, so give the names block boxes. */
+.mcp-card-title .mcp-server-name {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.mcp-tree .mcp-server-name > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mcp-card-title .strike {
   text-decoration: line-through;
   color: var(--cm-muted);
@@ -325,6 +381,113 @@
 
 .log-line.error {
   color: var(--cm-red);
+}
+
+/* Antigravity's attention-chip shape ("Setup required"): 10px medium, 10% tint, pill. The text mixes
+   20% of the text color into --cm-yellow to clear 4.5:1 on the tint in light theme, where plain
+   --cm-yellow measured 4.08:1 (Antigravity's own amber-600 text is lower still). */
+.cm-attention-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: var(--font-weight-medium, 500);
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: var(--nux-radius-pill, 9999px);
+  background: color-mix(in srgb, var(--cm-yellow) 10%, transparent);
+  color: color-mix(in srgb, var(--cm-yellow) 80%, var(--cm-text));
+  white-space: nowrap;
+}
+
+/* The pending spinner, for icons swapped to progress_activity. */
+.cm-spin {
+  animation: agy-spin 0.8s linear infinite;
+}
+
+.agy-icon-btn[aria-disabled="true"] {
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-spin {
+    animation-duration: 2.4s;
+  }
+}
+
+/* Confirmation dialog, in Antigravity's dialog style: card fill, border, 24px new-UX radius,
+   large shadow, a text-sm body, and right-aligned 32px pill buttons. */
+.cm-dialog {
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 16px;
+  border: 1px solid var(--cm-border);
+  border-radius: var(--nux-radius-2xl, 24px);
+  background: var(--cm-card);
+  color: var(--cm-text);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+.cm-dialog::backdrop {
+  background: var(--scrim, rgb(0 0 0 / 0.4));
+}
+
+.cm-dialog-title {
+  margin: 0 0 8px;
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-semibold, 600);
+  line-height: 1.4;
+}
+
+.cm-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: var(--text-sm, 0.875rem);
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--cm-text) 80%, transparent);
+}
+
+.cm-dialog-body p {
+  margin: 0;
+}
+
+.cm-dialog-quote {
+  max-height: 30vh;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border-radius: var(--radius-lg, 0.5rem);
+  background: var(--cm-surface);
+  font-size: var(--text-xs, 0.75rem);
+  overflow-wrap: anywhere;
+}
+
+.cm-dialog-error {
+  margin: 0 0 12px;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--cm-red);
+}
+
+.cm-dialog-error:empty {
+  display: none;
+}
+
+.cm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cm-dialog-btn {
+  height: 32px;
+  padding: 0 12px;
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.cm-dialog-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* The kit toast is pinned bottom-right with no max width; keep a 12px gutter in narrow panes. */
@@ -597,18 +760,49 @@
   color: var(--cm-text);
 }
 
+/* Antigravity's card-row pattern: the title is the card's one button, and its ::after stretches the
+   hit area over the whole card. The button opts out of the global ring (.no-focus-ring) so the
+   card draws it instead, around the area you can click. */
 :is(.subagent-card, .subagent-culprit.clickable) {
+  position: relative;
   cursor: pointer;
+}
+
+.subagent-open {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.subagent-open:focus-visible {
   outline: none;
 }
 
-:is(.subagent-card, .subagent-culprit.clickable):is(:hover, :focus-visible) {
+.subagent-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md, 0.375rem);
+}
+
+:is(.subagent-card, .subagent-culprit.clickable):is(:hover, :has(.subagent-open:focus-visible)) {
   border-color: color-mix(in srgb, var(--cm-accent) 45%, var(--cm-border));
 }
 
-:is(.subagent-card, .subagent-culprit.clickable):focus-visible {
+:is(.subagent-card, .subagent-culprit.clickable):has(.subagent-open:focus-visible) {
   outline: 2px solid var(--nux-focus-ring, var(--cm-accent));
   outline-offset: 2px;
+}
+
+.subagent-viewing {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--cm-secondary-fg);
 }
 
 .subagent-card.nested {
@@ -626,13 +820,6 @@
   color: var(--cm-blue);
   font-family: var(--editor-font-family);
   font-weight: var(--font-weight-semibold, 600);
-}
-
-.subagent-inspect-btn {
-  height: 18px;
-  padding: 0 6px;
-  font-size: 10px;
-  margin-left: auto;
 }
 
 .subagent-more-btn {
@@ -663,5 +850,22 @@
 
   .breakdown-row .row-pct {
     display: none;
+  }
+
+  /* The share column is hidden here, so append it to the token count instead. */
+  .breakdown-row:not(.collapsible-toggle) .row-tokens::after {
+    content: " · " attr(data-pct);
+    color: var(--cm-muted);
+  }
+
+  /* Drawer rows stack: the summary drops under the label, aligned with its text. */
+  .collapsible-toggle {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 1px;
+  }
+
+  .collapsible-toggle .row-tokens {
+    text-align: left;
+    padding-left: 22px;
   }
 }
