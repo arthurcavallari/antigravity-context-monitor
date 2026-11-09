@@ -218,7 +218,7 @@ test('renderSubagentsDrawer hides when empty and renders L1/L2 hierarchy with XS
   assert.ok(!idleDefault.includes('data-subagent-id="idle-4"') && idleDefault.includes('Show 2 earlier subagents ▾'));
 });
 
-test('mounts <agy-toggle-group> and <agy-switch> in linkedom with AgyUI loaded without losing declarative children', () => {
+test('mounts <agy-toggle-group> and the overage switch track in linkedom with AgyUI loaded without losing declarative children', () => {
   const { window, document, HTMLElement, customElements, CustomEvent } = parseHTML('<!doctype html><html><body><div id="root"></div></body></html>');
   const ctx = vm.createContext({ window, document, HTMLElement, customElements, CustomEvent, URLSearchParams });
   vm.runInContext(buildAgyUiJs(['core', 'tabs', 'overlays', 'controls', 'surfaces']), ctx, { filename: 'ui.js' });
@@ -228,7 +228,7 @@ test('mounts <agy-toggle-group> and <agy-switch> in linkedom with AgyUI loaded w
   cm.setHtml(root, cm.renderTopHeaderAndTabs({ model: { badgeLabel: 'Gemini' }, context: {} }, { activeTab: 'mcp' }) + cm.renderContextTab({ context: { categories: [] }, planUsage: { aiCredits: { useAiCredits: true } }, turnInsights: {} }));
   assert.equal(root.querySelectorAll('agy-toggle-group .agy-toggle-item').length, 3);
   assert.equal(root.querySelector('agy-toggle-group .agy-toggle-item.active')?.getAttribute('data-tab'), 'mcp');
-  assert.ok(root.querySelector('#ai-overage-toggle agy-switch.agy-switch.on'));
+  assert.ok(root.querySelector('#ai-overage-toggle.agy-switch.on[role="switch"]'));
 });
 
 test('custom models get a neutral badge, no Gemini window claims, and a plan-usage note', () => {

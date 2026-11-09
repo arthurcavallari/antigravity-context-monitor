@@ -1,7 +1,7 @@
 /** @fileoverview Renders Tab 3 (Diagnostics Log Tail, Auto-Scroll, Terminals Reaper, Sidecar Matrix). */
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
-  const { esc, icon, formatBadgeLabel, html, setHtml } = cm;
+  const { esc, icon, formatBadgeLabel, html, setHtml, switchHtml, setSwitch, focusKeyOf, restoreFocus } = cm;
   const MAX_LIVE_LOG_LINES = 80;
   const MAX_PAUSED_LOG_LINES = 300;
   const SAFE_ID_RE = /^[a-zA-Z0-9._-]+$/;
@@ -95,19 +95,23 @@
         Task Logs <span id="diag-log-count-pill" class="agy-count-pill">${tailOn ? logsCount : 'Paused'}</span>
       </span>
       <div class="mcp-card-actions" style="flex-wrap:wrap">
-        <button id="diag-clear-logs-btn" class="agy-btn agy-btn-secondary"${hideStyle}>Clear</button>
-        <button id="diag-autoscroll-toggle" type="button" role="switch" aria-checked="${autoScroll}" class="overage-toggle" title="Toggle automatic scrolling to newest log lines"${hideStyle}>
-          <span>Auto-scroll</span>
-          <agy-switch class="agy-switch sm ${autoScroll ? 'on' : ''}" size="sm" ${autoScroll ? 'checked' : ''}>
-            <span class="agy-switch-thumb"></span>
-          </agy-switch>
-        </button>
-        <button id="diag-log-toggle" type="button" role="switch" aria-checked="${tailOn}" class="overage-toggle" title="Toggle live Language Server log tailing">
-          <span>Tail</span>
-          <agy-switch class="agy-switch sm ${tailOn ? 'on' : ''}" size="sm" ${tailOn ? 'checked' : ''}>
-            <span class="agy-switch-thumb"></span>
-          </agy-switch>
-        </button>
+        <button id="diag-clear-logs-btn" type="button" class="agy-btn agy-btn-secondary"${hideStyle}>Clear</button>
+        <span id="diag-autoscroll-row" class="cm-switch-row"${hideStyle}>
+          <label id="diag-autoscroll-label" for="diag-autoscroll-toggle">Auto-scroll</label>
+          ${switchHtml({
+            on: autoScroll,
+            size: 'sm',
+            attrs: 'id="diag-autoscroll-toggle" aria-labelledby="diag-autoscroll-label" title="Toggle automatic scrolling to newest log lines"',
+          })}
+        </span>
+        <span class="cm-switch-row">
+          <label id="diag-log-label" for="diag-log-toggle">Tail</label>
+          ${switchHtml({
+            on: tailOn,
+            size: 'sm',
+            attrs: 'id="diag-log-toggle" aria-labelledby="diag-log-label" title="Toggle live Language Server log tailing"',
+          })}
+        </span>
       </div>
     `;
   }
@@ -256,22 +260,10 @@
     if (pillEl) pillEl.textContent = tailOn ? String(state.logBuffer.length) : 'Paused';
     const clearBtn = document.getElementById('diag-clear-logs-btn');
     if (clearBtn) clearBtn.style.display = tailOn ? '' : 'none';
-    for (const [id, on, show] of [['diag-autoscroll-toggle', autoScroll, tailOn], ['diag-log-toggle', tailOn, true]]) {
-      const btn = document.getElementById(id);
-      if (btn) {
-        btn.style.display = show ? '' : 'none';
-        if (window.AgyUI?.syncSwitchState) {
-          window.AgyUI.syncSwitchState(btn, on);
-        } else {
-          btn.setAttribute('aria-checked', String(on));
-          const sw = btn.querySelector('.agy-switch');
-          if (sw) {
-            sw.checked = on;
-            sw.classList?.toggle?.('on', on);
-          }
-        }
-      }
-    }
+    const autoScrollRow = document.getElementById('diag-autoscroll-row');
+    if (autoScrollRow) autoScrollRow.style.display = tailOn ? '' : 'none';
+    setSwitch(document.getElementById('diag-autoscroll-toggle'), autoScroll);
+    setSwitch(document.getElementById('diag-log-toggle'), tailOn);
     const bodyEl = document.getElementById('diag-log-body');
     if (bodyEl) {
       if (!tailOn) {
@@ -324,8 +316,10 @@
     if (listsEl) {
       const nextLists = renderDiagnosticsLists(state.diagData);
       if (nextLists !== state.lastDiagListsHtml) {
+        const focusKey = listsEl.contains?.(document.activeElement) ? focusKeyOf(document.activeElement) : '';
         setHtml(listsEl, nextLists);
         state.lastDiagListsHtml = nextLists;
+        restoreFocus(listsEl, focusKey);
       }
     }
   }
