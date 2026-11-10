@@ -125,6 +125,21 @@ test('toasts are announced: the kit toast gets a live-region role, the fallback 
   kit.cm.showToast('', false);
   assert.equal(kit.document.querySelector('.agy-toast'), null, 'an empty message clears the toast');
 
+  // A kit that announces from its own live region keeps the toast (and its close button) out of it.
+  const modern = loadDom();
+  modern.document.defaultView.AgyUI = {
+    showToast() {
+      const live = modern.document.createElement('div');
+      live.className = 'agy-toast-live';
+      const toast = modern.document.createElement('div');
+      toast.className = 'agy-toast';
+      modern.document.body.append(live, toast);
+      return toast;
+    },
+  };
+  modern.cm.showToast('Reloaded github-mcp', false, 1);
+  assert.equal(modern.document.querySelector('.agy-toast').hasAttribute('role'), false);
+
   const bare = loadDom();
   bare.cm.showToast('Terminate "pwsh"? Click again to confirm.', false, 1);
   const slot = bare.document.getElementById('action-msg-slot');

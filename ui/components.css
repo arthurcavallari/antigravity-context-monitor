@@ -512,9 +512,10 @@
   cursor: default;
 }
 
-/* The kit toast is pinned bottom-right with no max width; keep a 12px gutter in narrow panes. */
+/* Kits before the native toast pin it bottom-right with no max width: keep a 12px gutter in narrow panes, and
+   Antigravity's 24rem cap so this doesn't widen the newer kit's toast. Drop once the kit dependency includes it. */
 .agy-toast {
-  max-width: calc(100vw - 24px);
+  max-width: min(24rem, calc(100vw - 24px));
 }
 
 .empty-hint {
