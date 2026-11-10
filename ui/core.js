@@ -86,6 +86,10 @@
       const hasNative = Boolean(cv['--background'] || cv['--foreground']);
       if (hasNative || cv['--vscode-editor-background'] || cv['--vscode-editor-foreground']) {
         root.dataset.theme = isLight ? 'light' : 'dark';
+        // theme-boot.js starts the next load in this theme.
+        try {
+          window.localStorage?.setItem('cm-theme', root.dataset.theme);
+        } catch {}
         for (const [k, v] of Object.entries(cv)) {
           if (typeof v === 'string' && !(hasNative && k.startsWith('--agy-'))) {
             root.style.setProperty(k, v);
