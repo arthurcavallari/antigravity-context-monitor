@@ -177,7 +177,7 @@ test('renderSubagentsDrawer hides when empty and renders L1/L2 hierarchy with XS
   const expanded = ui.renderSubagentsDrawer(subagents, true, 'sub-l1');
   assert.ok(!expanded.includes(HOSTILE));
   assert.ok(expanded.includes(HOSTILE_ESCAPED));
-  assert.ok(expanded.includes('↳ L2'));
+  assert.match(expanded, /class="fit-pill subagent-depth-badge"[^>]*>\s*<svg[\s\S]*?<\/svg>L2\s*<\/span>/, 'the depth badge uses an icon, not a ↳ glyph');
   assert.ok(expanded.includes('data-subagent-id="sub-l1"'));
   assert.ok(expanded.includes(`data-subagent-id="sub-l2-${HOSTILE_ESCAPED}"`));
   assert.ok(expanded.includes('Viewing') && expanded.includes('Inspect'));
@@ -198,24 +198,24 @@ test('renderSubagentsDrawer hides when empty and renders L1/L2 hierarchy with XS
   const activeOnly = ui.renderSubagentsDrawer(mixed, true, 'root-1', false);
   assert.ok(activeOnly.includes('data-subagent-id="sub-l1"'), 'L1 parent of running L2 worker stays visible');
   assert.ok(!activeOnly.includes('data-subagent-id="done-1"') && !activeOnly.includes('data-subagent-id="done-2"'));
-  assert.ok(activeOnly.includes('Show 2 completed subagents ▾'));
+  assert.ok(activeOnly.includes('Show 2 completed subagents'));
 
   const pinnedDone = ui.renderSubagentsDrawer(mixed, true, 'done-2', false);
   assert.ok(pinnedDone.includes('data-subagent-id="done-2"'), 'currently viewed completed subagent stays visible');
-  assert.ok(pinnedDone.includes('Show 1 completed subagent ▾'));
+  assert.ok(pinnedDone.includes('Show 1 completed subagent'));
 
   const allShown = ui.renderSubagentsDrawer(mixed, true, 'root-1', true);
   assert.ok(allShown.includes('data-subagent-id="done-1"') && allShown.includes('data-subagent-id="done-2"'));
-  assert.ok(allShown.includes('Hide 2 completed subagents ▴'));
+  assert.ok(allShown.includes('Hide 2 completed subagents'));
 
-  // With runningCount === 0 and > 3 items, top 3 newest render by default with "Show N earlier subagents ▾"
+  // With runningCount === 0 and > 3 items, top 3 newest render by default with "Show N earlier subagents"
   const allIdle = {
     totalCount: 5, runningCount: 0, totalSteps: 25,
     items: [1, 2, 3, 4, 5].map((n) => ({ cascadeId: `idle-${n}`, nestingDepth: 1, title: `Idle ${n}`, statusBadge: 'Done', isRunning: false, stepCount: 5 })),
   };
   const idleDefault = ui.renderSubagentsDrawer(allIdle, true, 'root-1', false);
   assert.ok(idleDefault.includes('data-subagent-id="idle-1"') && idleDefault.includes('data-subagent-id="idle-3"'));
-  assert.ok(!idleDefault.includes('data-subagent-id="idle-4"') && idleDefault.includes('Show 2 earlier subagents ▾'));
+  assert.ok(!idleDefault.includes('data-subagent-id="idle-4"') && idleDefault.includes('Show 2 earlier subagents'));
 });
 
 test('mounts <agy-toggle-group> and the overage switch track in linkedom with AgyUI loaded without losing declarative children', () => {

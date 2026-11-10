@@ -726,6 +726,13 @@
   color: var(--cm-muted);
 }
 
+/* An icon followed by its label, such as "Matched to task". */
+.cm-icon-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
 .fit-pill {
   display: inline-flex;
   align-items: center;

@@ -12,6 +12,13 @@
   const ICONS = {
     chevron_right: 'M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z',
     expand_more: 'M480-345 240-585l56-56 184 183 184-183 56 56-240 240Z',
+    keyboard_arrow_up: 'M480-528 296-344l-56-56 240-240 240 240-56 56-184-184Z',
+    // Material Symbols, the family Antigravity's icons come from. It has no icon for a nested item, so the
+    // depth badge uses subdirectory_arrow_right, the icon form of the ↳ it replaces.
+    arrow_back: 'M313-440l224 224-57 56-320-320 320-320 57 56-224 224h487v80H313Z',
+    arrow_forward: 'M647-440H160v-80h487L423-744l57-56 320 320-320 320-57-56 224-224Z',
+    check: 'M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z',
+    subdirectory_arrow_right: 'm560-120-57-57 144-143H200v-480h80v400h367L503-544l56-57 241 241-240 240Z',
     // Stop (a ring around a square) and the pending spinner (a three-quarter ring), on the
     // Material Symbols 960-unit grid that Antigravity uses for its stop and loading states.
     stop_circle:

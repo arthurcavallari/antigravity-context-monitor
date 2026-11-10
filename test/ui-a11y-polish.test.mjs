@@ -170,6 +170,36 @@ test('drawer rows and drawer cards are spaced by gap, not inline margins', () =>
   assert.match(css, /\.culprit-group \{[^}]*gap: 5px;/);
 });
 
+test('drawers draw icons, not text glyphs that render unevenly and get read aloud', () => {
+  const { cm } = loadDom();
+  for (const name of ['arrow_back', 'arrow_forward', 'check', 'keyboard_arrow_up', 'subdirectory_arrow_right']) {
+    assert.match(cm.ICONS[name], /^[Mm]\d/, `${name} is registered`);
+  }
+  const subagents = [
+    { cascadeId: 'a', title: 'one', nestingDepth: 1, status: 'CASCADE_RUN_STATUS_IDLE' },
+    { cascadeId: 'b', title: 'two', nestingDepth: 2, status: 'CASCADE_RUN_STATUS_IDLE' },
+    ...['c', 'd', 'e'].map((id) => ({ cascadeId: id, title: id, nestingDepth: 1, status: 'CASCADE_RUN_STATUS_IDLE' })),
+  ];
+  const html = [
+    cm.renderSubagentsDrawer({ items: subagents }, true, 'root', false),
+    cm.renderSubagentsDrawer({ items: subagents }, true, 'root', true),
+    cm.renderEffortFitDrawer(
+      {
+        totalTurns: 2,
+        optimalTurns: 1,
+        flaggedTurnsCount: 1,
+        latestTurnFit: { status: 'optimal', shortModelLabel: 'Pro', phaseSplit: {} },
+        recentFlaggedTurns: [{ turnNumber: 1, promptPreview: 'x', status: 'upgrade', shortModelLabel: 'Flash', recommendedModel: 'Pro' }],
+      },
+      true,
+    ),
+  ].join('');
+  assert.doesNotMatch(html, /[←→↳▾▴✓]/);
+  assert.match(html, /class="cm-icon-label"><svg[\s\S]*?<\/svg>Matched to task/);
+  assert.match(html, /subagent-more-btn[\s\S]*?Show \d+ earlier subagents<svg/);
+  assert.match(html, /subagent-more-btn[\s\S]*?Hide \d+ earlier subagents<svg/);
+});
+
 test('the conversation picker has a real label and a tooltip-free default', () => {
   const { cm, root } = loadDom();
   cm.ensureShellMounted(root, {}, () => {}, () => {});

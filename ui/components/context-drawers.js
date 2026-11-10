@@ -1,7 +1,7 @@
 /** @fileoverview Expandable drawers for the Context Monitor header and Context tab. */
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
-  const { esc, html } = cm;
+  const { esc, html, icon } = cm;
   const HELP_ENTRIES = [
     { key: 'ceiling', title: 'Autocompact Ceiling' },
     { key: 'native', title: 'Native Model Window' },
@@ -186,9 +186,9 @@
               <div class="fit-flow">
                 <span class="fit-pill">${esc(latTurn.shortModelLabel)}</span>
                 ${latTurn.status === 'optimal'
-                  ? html`<span>✓ Matched to task</span>`
+                  ? html`<span class="cm-icon-label">${icon('check', 12)}Matched to task</span>`
                   : html`
-                    <span>→</span>
+                    ${icon('arrow_forward', 12)}
                     <span class="fit-pill rec ${latTurn.status === 'thrashing' ? 'upgrade' : ''}">Better fit: ${esc(latTurn.recommendedModel)}</span>
                   `}
               </div>
@@ -225,7 +225,7 @@
                 </div>
                 <div class="fit-flow">
                   <span class="fit-pill">${esc(ft.shortModelLabel)}</span>
-                  <span>→</span>
+                  ${icon('arrow_forward', 12)}
                   <span class="fit-pill rec ${ft.status === 'thrashing' ? 'upgrade' : ''}">Better fit: ${esc(ft.recommendedModel)}</span>
                 </div>
                 <div class="fit-reason">Why: ${esc(ft.reason)}</div>

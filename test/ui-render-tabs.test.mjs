@@ -206,7 +206,8 @@ test('renderContextTab renders .subagent-banner breadcrumb with Parent and Root 
 
   assert.ok(!l2Html.includes(HOSTILE));
   assert.ok(l2Html.includes('class="subagent-banner"'));
-  assert.ok(l2Html.includes(`← Parent: L1 Coord ${HOSTILE_ESCAPED}`));
+  assert.match(l2Html, /<\/svg> Parent: L1 Coord /, 'the back button leads with the arrow_back icon');
+  assert.ok(l2Html.includes(`Parent: L1 Coord ${HOSTILE_ESCAPED}`));
   assert.ok(l2Html.includes('data-subagent-id="sub-l1"'));
   assert.ok(l2Html.includes('class="agy-btn subagent-root-btn" data-subagent-id="root-1"'));
   assert.ok(l2Html.includes('class="fit-card subagent-culprit clickable"'));
