@@ -372,13 +372,13 @@
   // The label and summary truncate with an ellipsis; below 340px the summary drops under the label.
   // label and summary may be plain text or trusted html; each gets a title so cut-off text is
   // recoverable on hover.
-  const drawerToggleHtml = ({ id, controls, expanded = false, label, summary = '', summaryCls = '', extra = '', style = '' }) => html`
+  const drawerToggleHtml = ({ id, controls, expanded = false, label, summary = '', summaryCls = '', extra = '' }) => html`
     <button
       type="button"
       id="${id}"
       class="breakdown-row collapsible-toggle"
       aria-expanded="${expanded ? 'true' : 'false'}"
-      aria-controls="${controls}"${style ? rawHtml(` style="${escapeRaw(style)}"`) : ''}
+      aria-controls="${controls}"
     >
       <span class="row-label muted">
         <span class="chevron ${expanded ? 'open' : ''}" aria-hidden="true">${icon('chevron_right', 14)}</span>

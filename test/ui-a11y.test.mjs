@@ -290,7 +290,7 @@ test('subagent cards and culprit rows have one stretched title button instead of
     256000,
     true,
   );
-  assert.match(culprits, /class="fit-card subagent-culprit clickable" style="margin-bottom:5px">/);
+  assert.match(culprits, /class="fit-card subagent-culprit clickable">/);
   assert.match(culprits, /class="fit-prompt subagent-open no-focus-ring"\s+data-subagent-id="sa-1"\s+aria-label="Inspect subagent code-reviewer"/);
 });
 
