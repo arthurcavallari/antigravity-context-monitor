@@ -131,6 +131,26 @@ test('terminals show their workspace folder name, with the full path on hover, a
   assert.match(cm.renderDiagnosticsLists({ terminals: [{ terminalId: 't2', title: 'node', pid: 1 }] }), />No workspace<\/div>/);
 });
 
+test('font sizes come from tokens, and 10px is kept for chips', () => {
+  const styles = readFileSync(join(UI_DIR, 'styles.css'), 'utf8');
+  const components = readFileSync(join(UI_DIR, 'components.css'), 'utf8');
+  const literals = [...(styles + components).matchAll(/font-size:\s*([^;]+);/g)]
+    .map((m) => m[1])
+    .filter((v) => !/^var\(--(text|cm-text)-/.test(v));
+  assert.deepEqual(literals, ['16px'], 'only the root size is a literal');
+  assert.match(styles, /--cm-text-chip: 0\.625rem;/);
+  const sizeOf = (css, sel) => css.match(new RegExp(`^${sel.replace(/\./g, '\\.')} \\{[^}]*font-size: ([^;]+);`, 'm'))?.[1];
+  assert.equal(sizeOf(styles, '.tier-pill'), 'var(--cm-text-chip)');
+  assert.equal(sizeOf(components, '.cm-attention-chip'), 'var(--cm-text-chip)');
+  assert.equal(sizeOf(components, '.spec-label'), 'var(--cm-text-meta)', 'labels move up from 10px');
+  assert.equal(sizeOf(components, '.thinking-sub'), 'var(--cm-text-meta)');
+
+  const { cm } = loadDom();
+  const counts = cm.renderMcpBudgetsTab(mcpData) + cm.renderDiagnosticsControls(3, { logTailingEnabled: true }) + cm.renderDiagnosticsLists({});
+  assert.equal((counts.match(/class="tier-pill"/g) || []).length, 4, 'section counts use the count chip');
+  assert.doesNotMatch(counts, /agy-count-pill/);
+});
+
 test('the conversation picker has a real label and a tooltip-free default', () => {
   const { cm, root } = loadDom();
   cm.ensureShellMounted(root, {}, () => {}, () => {});

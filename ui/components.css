@@ -135,7 +135,7 @@
 }
 
 .perf-label {
-  font-size: 0.6875rem;
+  font-size: var(--cm-text-meta);
   color: var(--cm-muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -167,7 +167,7 @@
 }
 
 .culprit-group-title {
-  font-size: 0.6875rem;
+  font-size: var(--cm-text-meta);
   font-weight: var(--font-weight-semibold, 600);
   color: var(--cm-muted);
   text-transform: uppercase;
@@ -297,7 +297,7 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  font-size: 0.8125rem;
+  font-size: var(--cm-text-title);
   font-weight: var(--font-weight-medium, 500);
   color: var(--cm-text);
 }
@@ -406,7 +406,7 @@
 .cm-attention-chip {
   display: inline-flex;
   align-items: center;
-  font-size: 10px;
+  font-size: var(--cm-text-chip);
   font-weight: var(--font-weight-medium, 500);
   line-height: 1;
   padding: 3px 6px;
@@ -618,7 +618,7 @@
 
 :is(.context-help-item, .model-spec-item) code {
   font-family: var(--editor-font-family);
-  font-size: 0.6875rem;
+  font-size: var(--cm-text-meta);
   padding: 1px 4px;
   border-radius: var(--radius-sm, 0.25rem);
   background: var(--cm-card);
@@ -640,7 +640,7 @@
 }
 
 .spec-label {
-  font-size: 0.625rem;
+  font-size: var(--cm-text-meta);
   color: var(--cm-muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -668,7 +668,7 @@
 
 .thinking-sub {
   font-family: var(--editor-font-family);
-  font-size: 0.625rem;
+  font-size: var(--cm-text-meta);
   color: var(--cm-muted);
   margin-top: 1px;
 }
@@ -705,7 +705,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--cm-text-meta);
   color: var(--cm-muted);
 }
 
@@ -715,7 +715,7 @@
   gap: 4px;
   padding: 1px 7px;
   border-radius: 9999px;
-  font-size: 11px;
+  font-size: var(--cm-text-meta);
   line-height: 15px;
   background: var(--cm-secondary);
   color: var(--cm-secondary-fg);
@@ -734,7 +734,7 @@
 }
 
 .fit-reason {
-  font-size: 11px;
+  font-size: var(--cm-text-meta);
   line-height: 1.35;
   color: var(--cm-muted);
   white-space: normal;
@@ -746,7 +746,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--cm-text-meta);
   color: var(--cm-muted);
   margin-top: 2px;
 }
@@ -833,7 +833,7 @@
 
 .subagent-viewing {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--cm-text-meta);
   font-weight: var(--font-weight-medium, 500);
   color: var(--cm-secondary-fg);
 }
@@ -859,7 +859,7 @@
   width: 100%;
   justify-content: center;
   height: 24px;
-  font-size: 11px;
+  font-size: var(--cm-text-meta);
   color: var(--cm-muted);
   background: var(--cm-card);
   border: 1px solid var(--cm-border);
