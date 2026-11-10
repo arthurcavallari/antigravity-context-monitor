@@ -106,10 +106,18 @@ body {
   line-height: 1.4;
 }
 
+/* The shell and card paddings, shared with the toast (components.css) so it sits inside the card. */
+:root {
+  --cm-shell-pad-y: clamp(8px, 2vw, 14px);
+  --cm-shell-pad-x: clamp(8px, 2vw, 14px);
+  --cm-card-pad-y: 12px;
+  --cm-card-pad-x: 12px;
+}
+
 .dock-shell {
   width: 100%;
   min-height: 100vh;
-  padding: clamp(8px, 2vw, 14px);
+  padding: var(--cm-shell-pad-y) var(--cm-shell-pad-x);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -142,7 +150,7 @@ body {
   background: var(--cm-card);
   border: 1px solid var(--cm-border);
   border-radius: var(--radius-xl, 0.75rem);
-  padding: 12px;
+  padding: var(--cm-card-pad-y) var(--cm-card-pad-x);
 }
 
 .tab-slot {
@@ -648,12 +656,14 @@ h4.culprit-group-title {
 }
 
 @media (max-height: 240px) {
-  .dock-shell {
-    padding: 6px 8px;
-    gap: 6px;
+  :root {
+    --cm-shell-pad-y: 6px;
+    --cm-shell-pad-x: 8px;
+    --cm-card-pad-y: 8px;
+    --cm-card-pad-x: 10px;
   }
 
-  .context-card {
-    padding: 8px 10px;
+  .dock-shell {
+    gap: 6px;
   }
 }

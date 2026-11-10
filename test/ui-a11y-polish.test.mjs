@@ -215,6 +215,16 @@ test('every --cm-* token styles.css defines is read somewhere', () => {
   assert.equal(typeof loadDom().cm.barColor, 'undefined', 'the unused color helpers are gone');
 });
 
+test('the toast sits inside the card, at its content edges, using the shell and card padding tokens', () => {
+  const styles = readFileSync(join(UI_DIR, 'styles.css'), 'utf8');
+  const components = readFileSync(join(UI_DIR, 'components.css'), 'utf8');
+  assert.match(styles, /\.dock-shell \{[^}]*padding: var\(--cm-shell-pad-y\) var\(--cm-shell-pad-x\);/);
+  assert.match(styles, /\.context-card \{[^}]*padding: var\(--cm-card-pad-y\) var\(--cm-card-pad-x\);/);
+  const toast = components.match(/^\.agy-toast \{([^}]*)\}/m)?.[1] ?? '';
+  assert.match(toast, /right: calc\(var\(--cm-shell-pad-x\) \+ 1px \+ var\(--cm-card-pad-x\)\);/);
+  assert.match(toast, /bottom: calc\(var\(--cm-shell-pad-y\) \+ 1px \+ var\(--cm-card-pad-y\)\);/);
+});
+
 test('the conversation picker has a real label and a tooltip-free default', () => {
   const { cm, root } = loadDom();
   cm.ensureShellMounted(root, {}, () => {}, () => {});

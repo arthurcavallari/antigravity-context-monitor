@@ -539,6 +539,14 @@
   cursor: default;
 }
 
+/* The kit pins its toast 12px from the panel's edges, which puts it on the card's border here. Inset it to the
+   card's content edges instead: past the shell padding, the 1px card border and the card padding. */
+.agy-toast {
+  left: calc(var(--cm-shell-pad-x) + 1px + var(--cm-card-pad-x));
+  right: calc(var(--cm-shell-pad-x) + 1px + var(--cm-card-pad-x));
+  bottom: calc(var(--cm-shell-pad-y) + 1px + var(--cm-card-pad-y));
+}
+
 .empty-hint {
   font-size: var(--text-xs, 0.75rem);
   color: var(--cm-muted);
