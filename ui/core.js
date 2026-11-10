@@ -225,13 +225,8 @@
         document.querySelector?.('.agy-toast')?.remove?.();
         return;
       }
-      const toast = window.AgyUI.showToast(text, { error: isErr, durationMs });
-      // Newer kits announce toasts from their own hidden live region, because the toast holds a close button.
-      // Older kits don't, so make the toast itself the live region there.
-      if (!document.querySelector?.('.agy-toast-live')) {
-        toast?.setAttribute?.('role', isErr ? 'alert' : 'status');
-        toast?.setAttribute?.('aria-live', isErr ? 'assertive' : 'polite');
-      }
+      // The kit (1.7+) announces the message from its own hidden live region.
+      window.AgyUI.showToast(text, { error: isErr, durationMs });
       return;
     }
     let slot = document.getElementById?.('action-msg-slot');

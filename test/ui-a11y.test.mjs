@@ -116,29 +116,17 @@ test('focus keys find the same control again after an innerHTML re-render', () =
   assert.equal(cm.focusKeyOf(document.createElement('div')), '', 'a node with no id or data key gets no key');
 });
 
-test('toasts are announced: the kit toast gets a live-region role, the fallback slot is a live region', () => {
+test('toasts are announced: the kit\'s live region reads the message, the fallback slot is a live region', async () => {
   const kit = loadDom({ withKit: true });
-  kit.cm.showToast('Could not restart sidecar', true, 1);
+  kit.cm.showToast('Could not restart sidecar', true, 0);
   const toast = kit.document.querySelector('.agy-toast');
-  assert.equal(toast?.getAttribute('role'), 'alert');
-  assert.equal(toast?.getAttribute('aria-live'), 'assertive');
+  assert.equal(toast.hasAttribute('role'), false, 'the toast holds a close button, so it is not the live region');
+  const alert = kit.document.getElementById('agy-toast-live-alert');
+  assert.equal(alert?.getAttribute('role'), 'alert');
+  await new Promise((r) => setTimeout(r, 70));
+  assert.equal(alert.textContent, 'Could not restart sidecar');
   kit.cm.showToast('', false);
   assert.equal(kit.document.querySelector('.agy-toast'), null, 'an empty message clears the toast');
-
-  // A kit that announces from its own live region keeps the toast (and its close button) out of it.
-  const modern = loadDom();
-  modern.document.defaultView.AgyUI = {
-    showToast() {
-      const live = modern.document.createElement('div');
-      live.className = 'agy-toast-live';
-      const toast = modern.document.createElement('div');
-      toast.className = 'agy-toast';
-      modern.document.body.append(live, toast);
-      return toast;
-    },
-  };
-  modern.cm.showToast('Reloaded github-mcp', false, 1);
-  assert.equal(modern.document.querySelector('.agy-toast').hasAttribute('role'), false);
 
   const bare = loadDom();
   bare.cm.showToast('Terminate "pwsh"? Click again to confirm.', false, 1);
