@@ -154,7 +154,7 @@ test('font sizes come from tokens, and 10px is kept for chips', () => {
 test('drawer rows and drawer cards are spaced by gap, not inline margins', () => {
   const { cm } = loadDom();
   const drawers = [
-    cm.renderSubagentsDrawer([{ cascadeId: 'sa-1', title: 'explorer', status: 'CASCADE_RUN_STATUS_IDLE' }], false, 'root', false),
+    cm.renderSubagentsDrawer({ items: [{ cascadeId: 'sa-1', title: 'explorer', status: 'CASCADE_RUN_STATUS_IDLE' }] }, false, 'root', false),
     cm.renderMcpTreeDrawer({ servers: [{ name: 'github', tools: 3 }] }, false),
     cm.renderCompactionsDrawer({ count: 1, checkpoints: [] }, false, []),
     cm.renderEffortFitDrawer(
@@ -163,6 +163,7 @@ test('drawer rows and drawer cards are spaced by gap, not inline margins', () =>
     ),
     cm.renderCulpritsDrawer({ topChatSteps: [{ badge: 'Step', label: 'read', formattedTokens: '1.0k' }], promptSections: [] }, 256000, true),
   ].join('');
+  assert.equal((drawers.match(/class="breakdown-row collapsible-toggle"/g) || []).length, 5, 'all five drawers rendered');
   assert.doesNotMatch(drawers, /style="margin/, 'no inline margins on drawer rows or cards');
   assert.ok((drawers.match(/class="culprit-group"/g) || []).length >= 3, 'titled card groups use the gap container');
   const css = readFileSync(join(UI_DIR, 'components.css'), 'utf8');
