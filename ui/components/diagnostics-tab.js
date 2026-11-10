@@ -104,7 +104,7 @@
     const hideStyle = tailOn ? '' : (cm.rawHtml ? cm.rawHtml(' style="display:none"') : ' style="display:none"');
     return html`
       <h3 class="plan-title">
-        Task Logs <span id="diag-log-count-pill" class="agy-count-pill">${tailOn ? logsCount : 'Paused'}</span>
+        Task Logs <span id="diag-log-count-pill" class="tier-pill">${tailOn ? logsCount : 'Paused'}</span>
       </h3>
       <div class="mcp-card-actions" style="flex-wrap:wrap">
         <button id="diag-clear-logs-btn" type="button" class="agy-btn agy-btn-secondary"${hideStyle}>Clear</button>
@@ -228,11 +228,11 @@
     return html`
       ${errorHtml}
       <div class="plan-header" style="margin:12px 0 8px">
-        <h3 class="plan-title">Active Background Terminals <span class="agy-count-pill">${terminals.length}</span></h3>
+        <h3 class="plan-title">Active Background Terminals <span class="tier-pill">${terminals.length}</span></h3>
       </div>
       <div>${terminalsHtml}</div>
       <div class="plan-header" style="margin:12px 0 8px">
-        <h3 class="plan-title">Sidecar Processes <span class="agy-count-pill">${sidecars.length}</span></h3>
+        <h3 class="plan-title">Sidecar Processes <span class="tier-pill">${sidecars.length}</span></h3>
       </div>
       <div>${sidecarsHtml}</div>
     `;

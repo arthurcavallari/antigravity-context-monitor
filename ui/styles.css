@@ -27,6 +27,11 @@
   --cm-chart-teal: #2ec4b6;
   --cm-chart-slate: #64748b;
   --cm-think: var(--chart-purple, #9b59b6);
+  /* The sizes Antigravity uses besides text-xs and text-sm: 13px titles, 11px labels and meta text, and 10px
+     only for chips such as its count chip. */
+  --cm-text-title: 0.8125rem;
+  --cm-text-meta: 0.6875rem;
+  --cm-text-chip: 0.625rem;
   /* Antigravity's new-UX card radius. The host stylesheet sets it on the body; this keeps the kit's toasts,
      cards and banners at 16px when that stylesheet can't be fetched (they fall back to 12px otherwise). */
   --nux-radius-lg: 16px;
@@ -198,7 +203,7 @@ h4.culprit-group-title {
   gap: 4px;
   padding: 2px 8px;
   border-radius: 9999px;
-  font-size: 11px;
+  font-size: var(--cm-text-meta);
   line-height: 16px;
   font-weight: var(--font-weight-medium, 500);
   background: color-mix(in srgb, var(--color-blue-500, #4380b4) 10%, transparent);
@@ -412,7 +417,7 @@ h4.culprit-group-title {
 }
 
 .plan-title {
-  font-size: 0.8125rem;
+  font-size: var(--cm-text-title);
   font-weight: var(--font-weight-medium, 500);
   color: var(--cm-text);
   display: inline-flex;
@@ -423,7 +428,7 @@ h4.culprit-group-title {
 .tier-pill {
   display: inline-flex;
   align-items: center;
-  font-size: 10px;
+  font-size: var(--cm-text-chip);
   font-weight: var(--font-weight-semibold, 600);
   line-height: 1;
   background: var(--cm-secondary);
@@ -535,7 +540,7 @@ h4.culprit-group-title {
 }
 
 .credits-main {
-  font-size: 0.8125rem;
+  font-size: var(--cm-text-title);
   color: var(--cm-text);
   display: flex;
   align-items: center;

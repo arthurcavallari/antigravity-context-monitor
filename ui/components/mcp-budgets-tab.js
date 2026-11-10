@@ -113,7 +113,7 @@
         ${skillInjHtml}
       </div>
       <div class="plan-header" style="margin:14px 0 8px">
-        <h3 class="plan-title">MCP Servers <span class="agy-count-pill">${servers.length}</span></h3>
+        <h3 class="plan-title">MCP Servers <span class="tier-pill">${servers.length}</span></h3>
         <button type="button" id="mcp-refresh-all-btn" class="agy-btn agy-btn-secondary has-icon" title="Reload all MCP servers"${busyAttrs(isBusy('*'))}>
           ${isBusy('*') ? icon('progress_activity', 14, 'cm-spin') : refreshSvg}<span>Reload All</span>
         </button>
