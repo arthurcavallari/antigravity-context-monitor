@@ -12,6 +12,17 @@
   );
   const getLogText = (entry) => (typeof entry === 'string' ? entry : (entry?.text ?? ''));
 
+  // Antigravity shows a workspace by its folder name. The server already decodes file URIs into paths;
+  // anything it couldn't decode (a UNC share, a remote URI) arrives as-is, so decode and split that too.
+  function workspaceFolderName(pathOrUri) {
+    const raw = String(pathOrUri || '');
+    let text = raw;
+    try {
+      text = decodeURIComponent(raw);
+    } catch {}
+    return text.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).at(-1) || raw;
+  }
+
   function navigateToHangarPlugin(pluginId) {
     const raw = typeof pluginId === 'string' ? pluginId.trim() : '';
     const parts = raw.split('/');
@@ -140,9 +151,9 @@
               <div class="mcp-card-info">
                 <div class="mcp-card-title">
                   <span>${esc(t.title)}</span>
-                  <span class="agy-badge off"><span class="agy-badge-dot"></span>PID ${esc(t.pid)}</span>
+                  <span class="agy-badge cm-badge-muted">PID ${esc(t.pid)}</span>
                 </div>
-                <div class="mcp-card-meta" title="${esc(t.workspaceUri)}">${esc(t.workspaceUri || 'No workspace')}</div>
+                <div class="mcp-card-meta" title="${esc(t.workspaceUri)}">${esc(t.workspaceUri ? workspaceFolderName(t.workspaceUri) : 'No workspace')}</div>
               </div>
               <div class="mcp-card-actions">
                 <button
@@ -467,5 +478,6 @@
     handleFixWithAgent,
     navigateToHangarPlugin,
     handleDiagnosticsAction,
+    workspaceFolderName,
   });
 })();

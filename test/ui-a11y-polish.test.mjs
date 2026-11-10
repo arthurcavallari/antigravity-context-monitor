@@ -114,6 +114,23 @@ test('kit surfaces get Antigravity\'s 16px new-UX radius even without the host s
   assert.match(root, /--nux-radius-lg: 16px;/);
 });
 
+test('terminals show their workspace folder name, with the full path on hover, and a plain PID badge', () => {
+  const { cm } = loadDom();
+  const html = cm.renderDiagnosticsLists({
+    terminals: [{ terminalId: 't1', title: 'npm run dev', pid: 41232, workspaceUri: 'c:\\Users\\arthu\\IdeaProjects\\antigravity-context-monitor' }],
+  });
+  assert.match(html, /<span class="agy-badge cm-badge-muted">PID 41232<\/span>/);
+  assert.doesNotMatch(html, /agy-badge-dot/, 'no status dot on a neutral fact');
+  assert.match(html, /class="mcp-card-meta" title="c:\\Users\\arthu\\IdeaProjects\\antigravity-context-monitor">antigravity-context-monitor<\/div>/);
+
+  assert.equal(cm.workspaceFolderName('/home/x/my proj/'), 'my proj');
+  assert.equal(cm.workspaceFolderName('file:///c%3A/Users/arthu/My%20Repo'), 'My Repo', 'raw URIs are decoded too');
+  assert.equal(cm.workspaceFolderName('file://build-server/share'), 'share');
+  assert.equal(cm.workspaceFolderName('vscode-remote://wsl+Ubuntu/home/x'), 'x');
+  assert.equal(cm.workspaceFolderName('100%'), '100%', 'a bad escape keeps the raw text');
+  assert.match(cm.renderDiagnosticsLists({ terminals: [{ terminalId: 't2', title: 'node', pid: 1 }] }), />No workspace<\/div>/);
+});
+
 test('the conversation picker has a real label and a tooltip-free default', () => {
   const { cm, root } = loadDom();
   cm.ensureShellMounted(root, {}, () => {}, () => {});

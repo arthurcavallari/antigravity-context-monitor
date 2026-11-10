@@ -326,6 +326,16 @@
   font-size: var(--text-xs, 0.75rem);
   color: var(--cm-muted);
   font-variant-numeric: tabular-nums;
+  /* Paths and addresses have no spaces to break at. */
+  overflow-wrap: anywhere;
+}
+
+/* A neutral fact such as a PID uses Antigravity's default badge: the muted fill and text at normal weight,
+   with no status dot (a grey dot reads as "off" for a running process). */
+.agy-badge.cm-badge-muted {
+  background: var(--cm-surface);
+  color: var(--cm-muted);
+  font-weight: var(--font-weight-normal, 400);
 }
 
 .mcp-card-actions {
