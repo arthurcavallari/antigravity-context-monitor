@@ -153,7 +153,6 @@
         expanded: compactionsExpanded,
         label: `Compaction checkpoints (${compaction.count})`,
         summary: latestDropText,
-        style: 'margin-top:4px',
       })}
       ${cardsHtml}
     `;
@@ -177,7 +176,7 @@
     if (effortOpen) {
       const latestHtml = latTurn
         ? html`
-          <div>
+          <div class="culprit-group">
             <h4 class="culprit-group-title">Latest Prompt</h4>
             <div class="fit-card">
               <div class="fit-header">
@@ -214,12 +213,12 @@
         : '';
       const flaggedHtml = flaggedTurns.length
         ? html`
-          <div>
+          <div class="culprit-group">
             <h4 class="culprit-group-title">
               Prompts Where Another Model Fits Better (${esc(advisor.flaggedTurnsCount)} of ${esc(advisor.totalTurns)})
             </h4>
             ${flaggedTurns.map((ft) => html`
-              <div class="fit-card" style="margin-bottom:5px">
+              <div class="fit-card">
                 <div class="fit-header">
                   <span class="fit-prompt">#${esc(ft.turnNumber)} "${esc(ft.promptPreview)}"</span>
                   ${renderFitBadge(ft.status, ft.badge)}
@@ -250,7 +249,6 @@
         label: 'Prompt & effort fit',
         summary: fitRightLabel,
         summaryCls: advisor.flaggedTurnsCount > 0 ? 'warn' : '',
-        style: 'margin-top:4px',
       })}
       ${drawerBody}
     `;
@@ -282,7 +280,7 @@
           `
           : html`<span class="fit-prompt" title="${labelText}">${labelText}</span>`;
         return html`
-          <div class="${st.subagentId ? 'fit-card subagent-culprit clickable' : 'fit-card'}" style="margin-bottom:5px">
+          <div class="${st.subagentId ? 'fit-card subagent-culprit clickable' : 'fit-card'}">
             <div class="fit-header">
               <div class="fit-flow" style="min-width:0;flex:1;flex-wrap:nowrap">
                 <span class="fit-pill">${esc(st.badge || 'Step')}</span>
@@ -312,11 +310,11 @@
     const drawerContent = culpritsOpen
       ? html`
         <div id="culprits-drawer" class="culprits-drawer">
-          <div>
+          <div class="culprit-group">
             <h4 class="culprit-group-title">Largest Active Conversation Steps</h4>
             ${stepsHtml}
           </div>
-          <div>
+          <div class="culprit-group">
             <h4 class="culprit-group-title">System Prompt Breakdown (${esc(culprits.formattedPromptTotalTokens || '0')} total)</h4>
             <div class="fit-card">${sectionsHtml}</div>
           </div>
@@ -330,7 +328,6 @@
         expanded: culpritsOpen,
         label: 'Largest items in context',
         summary: culpritsRightLabel,
-        style: 'margin-top:4px',
       })}
       ${drawerContent}
     `;

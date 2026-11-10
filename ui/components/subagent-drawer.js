@@ -200,7 +200,6 @@
         label: `Subagents (${totalCount})`,
         summary: rawHtml(rightParts.join(' · ')),
         extra: runningDotHtml,
-        style: 'margin-top:4px',
       })}
       ${cardsHtml}
     `;

@@ -58,9 +58,15 @@
   user-select: none;
   border-radius: var(--radius-md, 0.375rem);
   padding: 3px 4px;
-  margin: 2px -4px 0;
+  margin: 0 -4px;
   outline: none;
   transition: background-color var(--dur-agy) var(--ease-agy);
+}
+
+/* Drawer rows take the list's gap, like Antigravity's gap-spaced lists; only the first one sits a little
+   further from the category rows above it. */
+.breakdown-row:not(.collapsible-toggle) + .collapsible-toggle {
+  margin-top: 6px;
 }
 
 .collapsible-toggle .row-tokens {
@@ -173,6 +179,17 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: 3px;
+}
+
+/* A titled group of cards in a drawer, spaced by gap rather than a margin on each card. */
+.culprit-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.culprit-group > .culprit-group-title {
+  margin: 0;
 }
 
 .culprit-row {
