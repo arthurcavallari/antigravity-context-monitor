@@ -7,7 +7,7 @@ import vm from 'node:vm';
 
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui');
 
-function loadCore() {
+function loadCore(windowProps = {}) {
   const props = new Map();
   const document = {
     documentElement: {
@@ -15,7 +15,7 @@ function loadCore() {
       style: { setProperty: (k, v) => props.set(k, v), removeProperty: (k) => props.delete(k) },
     },
   };
-  const window = {};
+  const window = { ...windowProps };
   vm.runInContext(readFileSync(join(UI_DIR, 'core.js'), 'utf8'), vm.createContext({ window, document }), { filename: 'core.js' });
   return { applyTheme: window.ContextMonitor.applyTheme, props, document };
 }
@@ -55,6 +55,55 @@ test('once the host has posted theme-change, server payloads only fill in chart 
   assert.equal(props.get('--muted-foreground'), '#71717A');
   assert.equal(props.get('--chart-purple'), '#9b59b6', 'chart colors, which the host never sends, still arrive');
   assert.equal(props.has('--onyx-well'), false);
+});
+
+function bootTheme({ search = '', stored = null, systemLight = false } = {}) {
+  const attrs = {};
+  const props = new Map();
+  const root = {
+    setAttribute: (k, v) => (attrs[k] = v),
+    style: { setProperty: (k, v) => props.set(k, v) },
+  };
+  const window = {
+    location: { search },
+    localStorage: { getItem: (k) => (k === 'cm-theme' ? stored : null) },
+    matchMedia: (q) => ({ matches: q === '(prefers-color-scheme: light)' && systemLight }),
+  };
+  const ctx = vm.createContext({ window, document: { documentElement: root }, URLSearchParams });
+  vm.runInContext(readFileSync(join(UI_DIR, 'theme-boot.js'), 'utf8'), ctx, { filename: 'theme-boot.js' });
+  return { theme: attrs['data-theme'], colorScheme: root.style.colorScheme, props };
+}
+
+test('theme-boot picks the first paint\'s theme: URL hint, then the saved theme, then the system setting', () => {
+  assert.equal(bootTheme({ search: '?hostTheme=light', stored: 'dark' }).theme, 'light');
+  assert.equal(bootTheme({ stored: 'light' }).theme, 'light');
+  assert.equal(bootTheme({ stored: 'dark', systemLight: true }).theme, 'dark', 'the saved theme beats the system setting');
+  assert.equal(bootTheme({ systemLight: true }).theme, 'light');
+  assert.equal(bootTheme({ stored: 'sepia' }).theme, 'dark', 'anything else falls back to dark');
+
+  const light = bootTheme({ systemLight: true });
+  assert.equal(light.colorScheme, 'light');
+  assert.equal(light.props.get('--background'), '#f8f9fc', 'overrides the host stylesheet\'s dark default');
+  const dark = bootTheme();
+  assert.equal(dark.colorScheme, 'dark');
+  assert.equal(dark.props.size, 0, 'dark keeps the host stylesheet\'s defaults');
+});
+
+test('index.html runs theme-boot before any stylesheet, and the server serves it', async () => {
+  const html = readFileSync(join(UI_DIR, 'index.html'), 'utf8');
+  const boot = html.indexOf('<script src="/theme-boot.js"></script>');
+  assert.ok(boot > 0, 'loaded as a blocking script, without defer or async');
+  assert.ok(boot < html.indexOf('<link rel="stylesheet"'));
+  const { UI_STATIC_ASSETS } = await import('../lib/constants.mjs');
+  assert.ok(UI_STATIC_ASSETS.some(([route, file]) => route === '/theme-boot.js' && file === 'theme-boot.js'));
+});
+
+test('applying a theme saves it for the next load\'s first paint', () => {
+  const saved = new Map();
+  const { applyTheme } = loadCore({ localStorage: { setItem: (k, v) => saved.set(k, v) } });
+  applyTheme({ themeType: 'light', cssVariables: { '--background': '#FFFFFF', '--foreground': '#0A0A0C' } });
+  assert.equal(saved.get('cm-theme'), 'light');
+  assert.doesNotThrow(() => loadCore().applyTheme(serverOnyx('dark')), 'works without storage');
 });
 
 test('styles.css scopes native muted text to Onyx and keeps a contrast-safe fallback elsewhere', () => {
