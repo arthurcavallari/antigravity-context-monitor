@@ -100,6 +100,14 @@ test('the log console is a labelled, focusable log, and says each line\'s severi
   assert.deepEqual(lines, ['GET /rpc 200', 'Warning: retrying after 429', 'Error: stream reset']);
 });
 
+test('the activity dot keeps pulsing, slower, when reduced motion is on', () => {
+  const css = readFileSync(join(UI_DIR, 'styles.css'), 'utf8');
+  const reduced = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)].map((m) => m[1]).join('\n');
+  assert.match(css, /\.activity-pulse\.active \{[^}]*animation: cm-pulse 2s/);
+  assert.match(reduced, /\.activity-pulse\.active \{\s*animation-duration: 3s;/);
+  assert.doesNotMatch(reduced, /\.activity-pulse[^{]*\{[^}]*animation: none/, 'Windows turns reduced motion on whenever Animation effects is off');
+});
+
 test('the conversation picker has a real label and a tooltip-free default', () => {
   const { cm, root } = loadDom();
   cm.ensureShellMounted(root, {}, () => {}, () => {});

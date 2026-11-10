@@ -240,9 +240,12 @@ h4.culprit-group-title {
   }
 }
 
+/* Reduced motion slows the pulse instead of stopping it, like the spinners below. Windows turns
+   reduced motion on for every Electron app when "Animation effects" is off, and a frozen dot
+   no longer reads as live. The pulse only fades opacity: nothing moves or scales. */
 @media (prefers-reduced-motion: reduce) {
   .activity-pulse.active {
-    animation: none;
+    animation-duration: 3s;
   }
 }
 
