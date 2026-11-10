@@ -1,7 +1,7 @@
 /** @fileoverview Subagent hierarchy banner, tree connector rows, and drill-down drawer. */
 (function () {
   const cm = (window.ContextMonitor = window.ContextMonitor || {});
-  const { esc, html, rawHtml } = cm;
+  const { esc, html, rawHtml, icon } = cm;
 
   function renderSubagentStatusBadge(sa = {}) {
     const rawStatus = sa.statusBadge || (
@@ -34,7 +34,7 @@
       <div class="subagent-banner">
         <div class="subagent-banner-nav">
           <button type="button" class="agy-btn subagent-back-btn" data-subagent-id="${esc(parentId)}" title="Return to parent conversation: ${esc(parentTitle)}">
-            ← Parent: ${esc(parentTitle)}
+            ${icon('arrow_back', 14)} Parent: ${esc(parentTitle)}
           </button>
           ${rootBtnHtml}
         </div>
@@ -53,7 +53,7 @@
     const depthBadge = isNested
       ? html`
         <span class="fit-pill subagent-depth-badge" title="Nested worker subagent (depth ${esc(depth)})">
-          ↳ L${esc(depth)}
+          ${icon('subdirectory_arrow_right', 12)}L${esc(depth)}
         </span>
       `
       : '';
@@ -171,8 +171,8 @@
       const kind = runningCount > 0 ? 'completed' : 'earlier';
       const noun = hiddenCount === 1 ? 'subagent' : 'subagents';
       const moreBtnLabel = subagentsShowAll
-        ? `Hide ${hiddenCount} ${kind} ${noun} ▴`
-        : `Show ${hiddenCount} ${kind} ${noun} ▾`;
+        ? `Hide ${hiddenCount} ${kind} ${noun}`
+        : `Show ${hiddenCount} ${kind} ${noun}`;
       const moreBtnHtml = hiddenCount > 0
         ? html`
           <button
@@ -181,7 +181,7 @@
             class="agy-btn subagent-more-btn"
             aria-expanded="${subagentsShowAll ? 'true' : 'false'}"
           >
-            ${esc(moreBtnLabel)}
+            ${esc(moreBtnLabel)}${icon(subagentsShowAll ? 'keyboard_arrow_up' : 'expand_more', 14)}
           </button>
         `
         : '';
