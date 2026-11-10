@@ -200,6 +200,20 @@ test('drawers draw icons, not text glyphs that render unevenly and get read alou
   assert.match(html, /subagent-more-btn[\s\S]*?Hide \d+ earlier subagents<svg/);
 });
 
+test('every --cm-* token styles.css defines is read somewhere', () => {
+  const styles = readFileSync(join(UI_DIR, 'styles.css'), 'utf8');
+  const sources = [
+    styles,
+    readFileSync(join(UI_DIR, 'components.css'), 'utf8'),
+    ...UI_SCRIPTS.map((rel) => readFileSync(join(UI_DIR, rel), 'utf8')),
+    readFileSync(join(UI_DIR, '..', 'lib', 'constants.mjs'), 'utf8'),
+  ].join('\n');
+  const defined = [...new Set([...styles.matchAll(/^\s*(--cm-[\w-]+):/gm)].map((m) => m[1]))];
+  const unread = defined.filter((name) => !new RegExp(`var\\(${name}[,)]`).test(sources));
+  assert.deepEqual(unread, []);
+  assert.equal(typeof loadDom().cm.barColor, 'undefined', 'the unused color helpers are gone');
+});
+
 test('the conversation picker has a real label and a tooltip-free default', () => {
   const { cm, root } = loadDom();
   cm.ensureShellMounted(root, {}, () => {}, () => {});

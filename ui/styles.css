@@ -1,25 +1,18 @@
 :root {
   --cm-bg: var(--agy-canvas, var(--background, #101010));
-  --cm-fg: var(--agy-ink, var(--foreground, #cccccc));
   --cm-surface: var(--agy-sunken, var(--muted, color-mix(in srgb, #cccccc 2.5%, #101010)));
-  --cm-card-bg: var(--agy-card, color-mix(in srgb, #cccccc 5%, #101010));
   --cm-card: var(--agy-card, var(--card, color-mix(in srgb, #cccccc 5%, #101010)));
-  --cm-card-hover: var(--agy-hover, color-mix(in srgb, #cccccc 6%, transparent));
-  --cm-header-bg: var(--agy-raised, color-mix(in srgb, #cccccc 4%, #101010));
   --cm-secondary: var(--agy-control, var(--secondary, color-mix(in srgb, #cccccc 12%, #101010)));
   --cm-secondary-fg: var(--agy-ink-soft, var(--secondary-foreground, color-mix(in srgb, #cccccc 88%, #101010)));
   --cm-border: var(--agy-rule, var(--border, color-mix(in srgb, #cccccc 8%, transparent)));
-  --cm-border-solid: var(--agy-card-edge, var(--card-border, color-mix(in srgb, #cccccc 8%, #101010)));
   --cm-text: var(--agy-ink, var(--foreground, #cccccc));
   --cm-muted: var(--agy-ink-soft, var(--muted-foreground, color-mix(in srgb, #cccccc 65%, #101010)));
   --cm-accent: var(--agy-accent, var(--primary, #007acc));
-  --cm-hover: var(--agy-hover, var(--secondary, color-mix(in srgb, #cccccc 6%, transparent)));
   --cm-green: var(--status-ok, var(--agy-ok, #7aae66));
   --cm-green-dot: var(--status-ok-dot, var(--color-green-500, #63984f));
   --cm-yellow: var(--status-warn, var(--agy-warn, #f3c949));
   --cm-red: var(--status-err, var(--agy-err, #de5555));
   --cm-blue: var(--status-info, var(--color-blue-400, #6a9fcb));
-  --cm-blue-dot: var(--status-info-dot, var(--color-blue-500, #4380b4));
   /* Text on blue or yellow tints. Dark keeps Antigravity's own colors; light darkens them (below). */
   --cm-blue-ink: var(--cm-blue);
   --cm-yellow-ink: var(--cm-yellow);
