@@ -55,7 +55,7 @@
     "node": ">=20.13.0"
   },
   "dependencies": {
-    "antigravity-sidecar-kit": "^1.6.0"
+    "antigravity-sidecar-kit": "^1.7.0"
   },
   "devDependencies": {
     "linkedom": "^0.18.15"
