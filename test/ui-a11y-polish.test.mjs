@@ -108,6 +108,12 @@ test('the activity dot keeps pulsing, slower, when reduced motion is on', () => 
   assert.doesNotMatch(reduced, /\.activity-pulse[^{]*\{[^}]*animation: none/, 'Windows turns reduced motion on whenever Animation effects is off');
 });
 
+test('kit surfaces get Antigravity\'s 16px new-UX radius even without the host stylesheet', () => {
+  const css = readFileSync(join(UI_DIR, 'styles.css'), 'utf8');
+  const root = css.match(/^:root \{([\s\S]*?)\n\}/m)?.[1] ?? '';
+  assert.match(root, /--nux-radius-lg: 16px;/);
+});
+
 test('the conversation picker has a real label and a tooltip-free default', () => {
   const { cm, root } = loadDom();
   cm.ensureShellMounted(root, {}, () => {}, () => {});
