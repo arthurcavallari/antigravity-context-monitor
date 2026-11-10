@@ -34,11 +34,9 @@
     '--cm-secondary',
     '--cm-secondary-fg',
     '--cm-border',
-    '--cm-border-solid',
     '--cm-text',
     '--cm-muted',
     '--cm-accent',
-    '--cm-hover',
   ];
   let lastThemeSig = '';
   let hasLiveHostTheme = false;
@@ -52,10 +50,8 @@
       '--cm-secondary': `color-mix(in srgb, ${fg} ${isLight ? '8%' : '12%'}, ${bg})`,
       '--cm-secondary-fg': `color-mix(in srgb, ${fg} ${isLight ? '80%' : '85%'}, ${bg})`,
       '--cm-border': `color-mix(in srgb, ${fg} ${isLight ? '7.5%' : '8%'}, transparent)`,
-      '--cm-border-solid': `color-mix(in srgb, ${fg} ${isLight ? '7.5%' : '8%'}, ${bg})`,
       '--cm-text': fg,
       '--cm-muted': `color-mix(in srgb, ${fg} ${isLight ? '60%' : '65%'}, ${bg})`,
-      '--cm-hover': `color-mix(in srgb, ${fg} ${isLight ? '7.5%' : '6%'}, transparent)`,
     };
   }
 
@@ -585,8 +581,6 @@
     formatPct: (n) => `${(Number(n) || 0).toFixed(1)}%`,
     formatRelativeReset: (str) => String(str || '—'),
     formatTimeShort: (ts) => (ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'),
-    barColor: (r) => (r === 'danger' ? 'var(--cm-red)' : (r === 'warn' ? 'var(--cm-yellow)' : 'var(--cm-accent)')),
-    tierColor: (c) => (c ? 'var(--cm-yellow)' : 'var(--cm-blue)'),
     renderEmptyState: (msg) => html`<div class="empty-hint">${esc(msg)}</div>`,
   });
 })();
