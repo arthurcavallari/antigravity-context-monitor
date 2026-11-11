@@ -165,10 +165,58 @@ test('renderDiagnosticsLists escapes terminal titles and sidecar errors', () => 
     sidecars: [
       { sidecarId: 'sc-1', pluginId: 'science-plugin', displayName: 'Science', statusBadge: 'ERRORED', isErrored: true },
       { sidecarId: 'broken-sc', displayName: 'Broken', statusBadge: 'ERRORED', isErrored: true },
+      { sidecarId: 'aem-sc', pluginDir: 'aem-65-plugin', pluginName: 'AEM 6.5', displayName: 'AEM', statusBadge: 'ERRORED', isErrored: true },
     ],
   });
-  assert.match(diagWithSidecars, /data-action="hangar-navigate"\s+data-plugin-id="science-plugin"/);
-  assert.match(diagWithSidecars, /data-action="hangar-navigate"\s+data-plugin-id="broken-sc"/);
+  assert.match(diagWithSidecars, /data-action="hangar-navigate"\s+data-plugin-id="science-plugin"\s+data-target-tab="sidecars"\s+data-sidecar-id="sc-1"/);
+  assert.match(diagWithSidecars, /data-action="hangar-navigate"\s+data-plugin-id="broken-sc"\s+data-target-tab="sidecars"\s+data-sidecar-id="broken-sc"/);
+  assert.match(diagWithSidecars, /data-action="hangar-navigate"\s+data-plugin-id="aem-65-plugin"\s+data-target-tab="sidecars"\s+data-sidecar-id="aem-sc"/);
+
+  const mcpPluginVariants = ui.renderMcpBudgetsTab({
+    mcpCatalog: {
+      servers: [
+        {
+          serverName: 'aem-65-mcp',
+          fullServerName: 'aem-65-plugin_aem-65-mcp',
+          pluginId: 'aem-65-plugin',
+          pluginDir: 'aem-65-plugin',
+          pluginName: 'aem-65',
+          statusBadge: 'READY',
+          enabled: true,
+          toolCount: 46,
+          eagerCount: 0,
+          deferredCount: 46,
+          formattedTokens: '16.0k',
+        },
+        {
+          serverName: 'display-only-mcp',
+          fullServerName: 'display-only-mcp',
+          pluginName: 'Display Name With Spaces',
+          statusBadge: 'READY',
+          enabled: true,
+          toolCount: 1,
+          eagerCount: 0,
+          deferredCount: 1,
+          formattedTokens: '100',
+        },
+        {
+          serverName: 'atlassian',
+          fullServerName: 'atlassian',
+          statusBadge: 'READY',
+          enabled: true,
+          toolCount: 12,
+          eagerCount: 0,
+          deferredCount: 12,
+          formattedTokens: '1.2k',
+        },
+      ],
+    },
+  });
+  assert.match(
+    mcpPluginVariants,
+    /data-action="hangar-navigate"\s+data-plugin-id="aem-65-plugin"\s+title="Inspect aem-65 in Hangar"/
+  );
+  assert.equal((mcpPluginVariants.match(/data-action="hangar-navigate"/g) || []).length, 1);
 });
 
 test('renderContextTab renders .subagent-banner breadcrumb with Parent and Root navigation when inspecting a subagent', () => {

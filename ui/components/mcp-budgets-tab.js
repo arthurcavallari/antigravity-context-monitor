@@ -7,10 +7,13 @@
 
   function renderMcpServerRow(srv, refreshSvg, busy = false) {
     const badgeCls = srv.isError ? 'agy-badge error' : (srv.enabled ? 'agy-badge ready' : 'agy-badge off');
-    const pluginRef = srv.pluginName || srv.pluginId || '';
+    const pluginRef = cm.pickSafeNavId
+      ? cm.pickSafeNavId(srv.pluginId, srv.pluginDir, srv.pluginName)
+      : (srv.pluginId || srv.pluginDir || srv.pluginName || '');
+    const labelRef = String(srv.pluginName || pluginRef).trim();
     const hangarBtn = pluginRef
       ? html`
-        <button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(pluginRef)}" title="Inspect ${esc(pluginRef)} in Hangar">
+        <button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(pluginRef)}" title="Inspect ${esc(labelRef)} in Hangar">
           Inspect in Hangar
         </button>
       `

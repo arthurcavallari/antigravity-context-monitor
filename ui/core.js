@@ -253,6 +253,21 @@
   // same control again. Controls without an id are keyed by their tag, stable classes and data attributes.
   const FOCUS_KEY_ATTRS = ['data-subagent-id', 'data-server', 'data-terminal-id', 'data-sidecar-id', 'data-plugin-id', 'data-action', 'data-tab'];
   const STATE_CLASSES = new Set(['active', 'active-subagent', 'open', 'on', 'spinning', 'disabled', 'strike']);
+  const SAFE_NAV_SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
+  function isSafeNavId(raw) {
+    if (typeof raw !== 'string') return false;
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.includes('..')) return false;
+    const parts = trimmed.split('/');
+    if (parts.length > 2) return false;
+    return parts.every((seg) => SAFE_NAV_SEGMENT_RE.test(seg) && seg !== '.' && seg !== '..');
+  }
+  function pickSafeNavId(...candidates) {
+    for (const c of candidates) {
+      if (isSafeNavId(c)) return String(c).trim();
+    }
+    return '';
+  }
   const cssIdent = (v) => (globalThis.CSS?.escape ? globalThis.CSS.escape(String(v)) : String(v).replace(/[^\w-]/g, (c) => `\\${c}`));
   const cssString = (v) => String(v).replace(/["\\]/g, (c) => `\\${c}`);
   function focusKeyOf(el) {
@@ -566,6 +581,8 @@
     mutateState: (a, p = {}) => cm.apiCall('/api/mutate', a && typeof a === 'object' ? a : { action: String(a || ''), payload: p }),
     notifyAgent,
     showToast,
+    isSafeNavId,
+    pickSafeNavId,
     focusKeyOf,
     restoreFocus,
     openConfirmDialog,

@@ -23,7 +23,7 @@
     return text.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).at(-1) || raw;
   }
 
-  function navigateToHangarPlugin(pluginId) {
+  function navigateToHangarPlugin(pluginId, opts = {}) {
     const raw = typeof pluginId === 'string' ? pluginId.trim() : '';
     const parts = raw.split('/');
     if (parts.length > 2 || raw.includes('..')) return { ok: false, pluginId: '' };
@@ -32,11 +32,21 @@
     if (!isSafePluginId(candidate) || (parts.length === 2 && !isSafePluginId(subCandidate))) {
       return { ok: false, pluginId: '' };
     }
+    const targetTab = opts?.targetTab === 'sidecars' || opts?.targetTab === 'discover'
+      ? opts.targetTab
+      : 'plugins';
+    const rawSidecar = typeof opts?.sidecarId === 'string' ? opts.sidecarId.trim() : '';
+    const validSidecar = rawSidecar && (cm.isSafeNavId ? cm.isSafeNavId(rawSidecar) : isSafePluginId(rawSidecar))
+      ? rawSidecar
+      : '';
+    const targetId = subCandidate
+      ? `${candidate}/${subCandidate}`
+      : (validSidecar && validSidecar !== candidate ? validSidecar : '');
     const payload = {
       type: 'hangar-navigate',
-      targetTab: 'plugins',
+      targetTab,
       pluginId: candidate,
-      ...(subCandidate ? { targetId: `${candidate}/${subCandidate}` } : {}),
+      ...(targetId ? { targetId } : {}),
     };
     if (typeof window !== 'undefined' && window.parent && typeof window.parent.postMessage === 'function') {
       let targetOrigin = '*';
@@ -180,10 +190,14 @@
               s.isErrored || s.lastError || s.statusBadge === 'ERRORED' || s.statusBadge === 'ERROR' || s.healthy === false,
             );
             const fixSummary = `Sidecar "${s.displayName || s.sidecarId}" is unhealthy (${s.statusBadge || 'ERRORED'})${s.lastError ? `: ${s.lastError}` : ''}. Please inspect and fix it.`;
-            const navTarget = s.pluginId || s.pluginName || s.sidecarId || '';
+            const navTarget = cm.pickSafeNavId
+              ? cm.pickSafeNavId(s.pluginId, s.pluginDir, s.pluginName, s.sidecarId)
+              : (s.pluginId || s.pluginDir || s.pluginName || s.sidecarId || '');
+            const safeScId = cm.pickSafeNavId ? cm.pickSafeNavId(s.sidecarId) : (s.sidecarId || '');
+            const sidecarAttr = safeScId ? html` data-sidecar-id="${esc(safeScId)}"` : '';
             const hangarBtnHtml = isUnhealthy && navTarget
               ? html`
-                <button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(navTarget)}" title="Inspect ${esc(s.displayName || navTarget)} in Hangar">
+                <button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(navTarget)}" data-target-tab="sidecars"${sidecarAttr} title="Inspect ${esc(s.displayName || navTarget)} in Hangar">
                   Inspect in Hangar
                 </button>
               `
@@ -394,7 +408,12 @@
   async function handleDiagnosticsAction(target, _e, state, runAction, refreshDiagnostics) {
     const navBtn = target.closest('[data-action="hangar-navigate"]');
     if (navBtn) {
-      navigateToHangarPlugin(navBtn.getAttribute?.('data-plugin-id') || navBtn.dataset?.pluginId || '');
+      const targetTab = navBtn.getAttribute?.('data-target-tab') || navBtn.dataset?.targetTab || '';
+      const sidecarId = navBtn.getAttribute?.('data-sidecar-id') || navBtn.dataset?.sidecarId || '';
+      navigateToHangarPlugin(
+        navBtn.getAttribute?.('data-plugin-id') || navBtn.dataset?.pluginId || '',
+        targetTab || sidecarId ? { targetTab, sidecarId } : undefined,
+      );
       return true;
     }
     if (target.closest('#diag-log-toggle')) {

@@ -334,7 +334,9 @@ test('CM-AUD-04 & CM-AUD-05: toggleMcpServerState supports bare-map .mcp.json an
 test('navigateToHangarPlugin posts hangar-navigate message and Hangar core.js validates origin and SAFE_ID_RE', () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const cmUiDir = join(here, '..', 'ui');
-  const hangarCorePath = join(here, '..', '..', 'antigravity-sidecar-hub', 'ui', 'core.js');
+  const hangarCorePath = ['antigravity-hangar', 'antigravity-sidecar-hub']
+    .map((repo) => join(here, '..', '..', repo, 'ui', 'core.js'))
+    .find((p) => existsSync(p)) || join(here, '..', '..', 'antigravity-hangar', 'ui', 'core.js');
 
   const posted = [];
   const cmWindow = {
@@ -518,6 +520,99 @@ test('CM-AUD-03, CM-AUD-04, CM-AUD-05: getLatestConversationSteps isolates conve
   framedCtx.window.ContextMonitor.navigateToHangarPlugin('vercel-plugin');
   assert.equal(framedPosted.length, 1);
   assert.equal(framedPosted[0].targetOrigin, '*');
+});
+
+test('buildMcpAndCustomizationsCatalog and normalizeSidecars resolve pluginDir without matching standalone mcp_config.json', () => {
+  const catalog = buildMcpAndCustomizationsCatalog(
+    {
+      states: [
+        {
+          status: 'MCP_SERVER_STATUS_READY',
+          spec: {
+            serverName: 'aem-65-plugin_aem-65-mcp',
+            originalServerName: 'aem-65-mcp',
+            pluginName: 'aem-65',
+            pluginRoot: '/Users/x/.gemini/config/plugins/aem-65-plugin',
+            configPath: '/Users/x/.gemini/config/plugins/aem-65-plugin/mcp_config.json',
+          },
+          tools: [],
+        },
+        {
+          status: 'MCP_SERVER_STATUS_READY',
+          spec: {
+            serverName: 'my-alias_srv',
+            originalServerName: 'srv',
+            pluginName: 'My Alias Plugin',
+            pluginRoot: '/Users/dev/repos/actual-repo',
+            configPath: '/Users/dev/repos/actual-repo/mcp_config.json',
+          },
+          tools: [],
+        },
+        {
+          status: 'MCP_SERVER_STATUS_READY',
+          spec: {
+            serverName: 'atlassian',
+            configPath: '/Users/x/.gemini/config/mcp_config.json',
+          },
+          tools: [],
+        },
+      ],
+    },
+    {},
+    0.28,
+    { appDataDir: '' }
+  );
+
+  const byName = Object.fromEntries(catalog.servers.map((s) => [s.serverName, s]));
+  assert.equal(byName['aem-65-mcp'].pluginDir, 'aem-65-plugin');
+  assert.equal(byName['aem-65-mcp'].pluginId, 'aem-65-plugin');
+  assert.equal(byName['aem-65-mcp'].pluginName, 'aem-65');
+
+  assert.equal(byName.srv.pluginDir, 'my-alias');
+  assert.equal(byName.srv.pluginId, 'my-alias');
+  assert.equal(byName.srv.pluginName, 'My Alias Plugin');
+
+  assert.equal(byName.atlassian.pluginDir, '');
+  assert.equal(byName.atlassian.pluginId, '');
+  assert.equal(byName.atlassian.pluginName, '');
+
+  const sidecars = normalizeSidecars({
+    sidecars: [
+      {
+        sidecarId: 'aem-inspector',
+        pluginName: 'AEM 6.5',
+        pluginPath: 'file:///Users/x/.gemini/config/plugins/aem-65-plugin/',
+        status: 'SIDECAR_STATUS_ERRORED',
+      },
+      {
+        sidecarId: 'agy-plugin-porter/cockpit',
+        status: 'SIDECAR_STATUS_RUNNING',
+      },
+    ],
+  });
+  assert.equal(sidecars[0].pluginDir, 'aem-65-plugin');
+  assert.equal(sidecars[1].pluginDir, 'agy-plugin-porter');
+
+  const here = dirname(fileURLToPath(import.meta.url));
+  const cmUiDir = join(here, '..', 'ui');
+  const posted = [];
+  const ctx = vm.createContext({
+    window: { parent: { postMessage: (msg) => posted.push(msg) } },
+  });
+  for (const rel of ['core.js', 'components/diagnostics-tab.js']) {
+    vm.runInContext(readFileSync(join(cmUiDir, rel), 'utf8'), ctx, { filename: rel });
+  }
+  const res = ctx.window.ContextMonitor.navigateToHangarPlugin('aem-65-plugin', {
+    targetTab: 'sidecars',
+    sidecarId: 'aem-65-plugin/inspector',
+  });
+  assert.equal(res.ok, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(posted[0])), {
+    type: 'hangar-navigate',
+    targetTab: 'sidecars',
+    pluginId: 'aem-65-plugin',
+    targetId: 'aem-65-plugin/inspector',
+  });
 });
 
 

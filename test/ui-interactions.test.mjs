@@ -401,5 +401,7 @@ test('diagnostics-tab and context-tab delegate clicks cleanly through #app witho
   await appClickHandler({ target: navBtn });
   assert.equal(posted.length, 1);
   assert.equal(posted[0].msg.type, 'hangar-navigate');
+  assert.equal(posted[0].msg.targetTab, 'sidecars');
   assert.equal(posted[0].msg.pluginId, 'broken-plugin');
+  assert.equal(posted[0].msg.targetId, 'broken-sc');
 });
