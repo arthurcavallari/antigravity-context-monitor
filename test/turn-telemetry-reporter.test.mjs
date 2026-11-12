@@ -606,3 +606,61 @@ test('extractSettledTurnTelemetryRecords reports antigravity-add-model custom mo
   assert.ok(!serialized.includes('gpt-4o'));
   clearReportedTurnKeys();
 });
+
+test('native 2.31.0 BYOM custom_models without custom- prefix anonymize telemetry, skip calibration, and suppress Google quota active badge [CM-06]', async () => {
+  clearReportedTurnKeys();
+  const { resolveModelMetadata } = await import('../lib/session-resolver.mjs');
+  const { extractPlanUsage } = await import('../lib/plan-quota.mjs');
+  const { analyzeModelAndEffortFit } = await import('../lib/effort-advisor.mjs');
+
+  const modelConfigData = {
+    clientModelConfigs: [
+      { label: 'Gemini 4 Carbon (High)', modelId: 'gemini-4-carbon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M427' } },
+      { label: 'Private Internal DeepSeek', modelId: 'deepseek-r1-corp' },
+    ],
+  };
+  const steps = [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', status: 'CORTEX_STEP_STATUS_DONE', userInput: { userResponse: 'audit' } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'done' } },
+  ];
+  const generators = [
+    {
+      stepIndices: [1],
+      plannerConfig: { modelName: 'deepseek-r1-corp' },
+      chatModel: {
+        usage: {
+          inputTokens: '6000',
+          outputTokens: '90',
+          apiProvider: 'API_PROVIDER_CUSTOM_OPENAI_COMPAT',
+        },
+      },
+    },
+  ];
+
+  const meta = resolveModelMetadata(modelConfigData, generators[0], steps);
+  assert.equal(meta.isCustom, true);
+  assert.equal(meta.isGemini, false);
+  assert.equal(meta.nativeCeiling, 256_000);
+
+  const plan = extractPlanUsage({ response: { groups: [{ displayName: 'Gemini Models', buckets: [] }] } }, meta);
+  assert.equal(plan.customModel, true);
+  assert.equal(plan.activeGroupId, '');
+
+  const fit = analyzeModelAndEffortFit(generators, steps, modelConfigData);
+  assert.equal(fit.totalTurns, 0);
+  assert.equal(fit.customTurns, 1);
+
+  const records = extractSettledTurnTelemetryRecords({
+    cascadeId: 'conv-byom-2310',
+    generatorMetadataList: generators,
+    steps,
+    modelConfigData,
+  });
+  assert.equal(records.length, 2);
+  for (const rec of records) {
+    assert.equal(rec.modelId, 'custom');
+    assert.equal(rec.apiProvider, 'API_PROVIDER_CUSTOM');
+  }
+  assert.ok(!JSON.stringify(records).toLowerCase().includes('deepseek'));
+  clearReportedTurnKeys();
+});
