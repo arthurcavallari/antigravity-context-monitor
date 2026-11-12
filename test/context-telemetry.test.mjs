@@ -1207,3 +1207,125 @@ test('resolveModelMetadata treats antigravity-add-model custom models as neither
   assert.equal(builtIn.isCustom, false);
   assert.equal(builtIn.nativeCeiling, GEMINI_NATIVE_CEILING);
 });
+
+test('fetchFullTelemetry hydrates cold JetboxSubscribeToSummaries, filters side questions, and backfills unloaded child subagents [CM-01]', async () => {
+  const { encodeConnectFrame } = await import('antigravity-sidecar-kit/rpc');
+  const tmp = mkdtempSync(join(tmpdir(), 'cm01-test-'));
+  const cfgPath = join(tmp, 'config.json');
+  writeFileSync(cfgPath, '{}');
+
+  const streamBuf = Buffer.concat([
+    encodeConnectFrame({
+      summaries: {
+        summaries: {
+          'cold-root': {
+            stepCount: 6,
+            status: 'CASCADE_RUN_STATUS_IDLE',
+            annotations: {
+              title: 'Cold Persisted Root',
+              lastUserViewTime: '2026-11-12T10:00:00Z',
+              sideQuestionCascadeIds: ['sq-linked'],
+            },
+          },
+          'sub-from-stream': {
+            stepCount: 4,
+            status: 'CASCADE_RUN_STATUS_IDLE',
+            trajectoryMetadata: {
+              parentConversationId: 'cold-root',
+              rootConversationId: 'cold-root',
+              nestingDepth: 1,
+              subagentSpec: { role: 'Stream Child', modelTier: 'flash' },
+            },
+          },
+        },
+      },
+    }),
+    encodeConnectFrame({}, 0x02),
+  ]);
+
+  clearRpcCache();
+  clearConversationDetails();
+  try {
+    const res = await fetchFullTelemetry({
+      lsAddress: '127.0.0.1:59901',
+      csrfToken: 'tok',
+      configPath: cfgPath,
+      appDataDir: tmp,
+      hostCascadeId: 'cold-root',
+      fetchFn: async (url) => {
+        const method = url.split('/').pop();
+        if (method === 'JetboxSubscribeToSummaries') {
+          return {
+            ok: true,
+            status: 200,
+            body: new ReadableStream({
+              start(ctrl) {
+                ctrl.enqueue(streamBuf);
+                ctrl.close();
+              },
+            }),
+          };
+        }
+        if (method === 'GetAllCascadeTrajectories') {
+          return {
+            ok: true,
+            status: 200,
+            text: async () =>
+              JSON.stringify({
+                trajectorySummaries: {
+                  'sq-linked': {
+                    stepCount: 1,
+                    status: 'CASCADE_RUN_STATUS_IDLE',
+                    annotations: { title: 'Linked Side Question', lastUserViewTime: '2026-11-12T10:05:00Z' },
+                  },
+                  'sq-typed': {
+                    stepCount: 2,
+                    status: 'CASCADE_RUN_STATUS_IDLE',
+                    trajectoryType: 'CORTEX_TRAJECTORY_TYPE_SIDE_QUESTION',
+                    annotations: { title: 'Typed Side Question', lastUserViewTime: '2026-11-12T10:06:00Z' },
+                  },
+                },
+              }),
+          };
+        }
+        if (method === 'GetCascadeTrajectorySteps') {
+          return {
+            ok: true,
+            status: 200,
+            text: async () =>
+              JSON.stringify({
+                steps: [
+                  { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'Audit cold summaries' } },
+                  {
+                    type: 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT',
+                    invokeSubagent: {
+                      subagents: [{ typeName: 'verifier', role: 'Step-Only Child' }],
+                      results: [{ conversationId: 'sub-step-only' }],
+                    },
+                  },
+                ],
+              }),
+          };
+        }
+        return { ok: true, status: 200, text: async () => '{}' };
+      },
+    });
+
+    assert.equal(res.session.cascadeId, 'cold-root');
+    assert.equal(res.session.title, 'Cold Persisted Root');
+    assert.deepEqual(
+      res.sessions.map((s) => s.cascadeId),
+      ['cold-root'],
+      'side questions must not leak into root sessions'
+    );
+    assert.deepEqual(
+      res.subagents.items.map((s) => s.cascadeId).sort(),
+      ['sub-from-stream', 'sub-step-only'],
+      'both stream-hydrated and step-referenced unloaded subagents must appear'
+    );
+  } finally {
+    clearConversationDetails();
+    clearRpcCache();
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

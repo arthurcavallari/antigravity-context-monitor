@@ -10,6 +10,7 @@
  */
 
 import { callLsRpc } from 'antigravity-sidecar-kit/rpc';
+import { fetchMergedCascadeTrajectories } from '../lib/context-telemetry.mjs';
 import {
   analyzeModelAndEffortFit,
   buildModelLookup,
@@ -61,7 +62,7 @@ async function fetchAllPages(method, listField, offsetField, cascadeId, target =
 }
 
 const [trajectoriesRes, modelConfigRes, userStatusRes] = await Promise.all([
-  callLsRpc('GetAllCascadeTrajectories', {}, { timeoutMs: RPC_TIMEOUT_MS }),
+  fetchMergedCascadeTrajectories({ timeoutMs: RPC_TIMEOUT_MS }),
   callLsRpc('GetCascadeModelConfigData', {}, { timeoutMs: RPC_TIMEOUT_MS }).catch(() => ({})),
   callLsRpc('GetUserStatus', {}, { timeoutMs: RPC_TIMEOUT_MS }).catch(() => ({})),
 ]);
