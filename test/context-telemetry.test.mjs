@@ -1410,3 +1410,120 @@ test('resolveModelMetadata parses ClientModelConfig.contextWindowOptions for col
   assert.equal(liveExtended.ceiling, 1_000_000);
   assert.equal(liveExtended.ceilingFormatted, '1.0M');
 });
+
+test('fetchFullTelemetry hydrates native 2.31+ swarm members.json/board.jsonl and attributes swarm tool steps [CM-16]', async () => {
+  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const tmp = mkdtempSync(join(tmpdir(), 'cm16-'));
+  const coordId = 'coord-swarm-2312';
+  const swarmDir = join(tmp, 'brain', coordId, '.system_generated', 'swarm');
+  mkdirSync(swarmDir, { recursive: true });
+  writeFileSync(
+    join(swarmDir, 'swarm.json'),
+    JSON.stringify({ version: 1, backend: 'local', swarm_id: coordId, created_at: '2026-11-12T09:45:00Z' })
+  );
+  writeFileSync(
+    join(swarmDir, 'members.json'),
+    JSON.stringify({
+      title: 'Test Native Swarm',
+      members: {
+        coordinator: { conversation_id: coordId, role: 'coordinator', phase: 'RUNNING', model: 'Gemini 4 Carbon (High)' },
+        kit: { conversation_id: 'w-kit', role: 'worker', phase: 'RUNNING', wake_mode: 'working', model: 'Gemini 4 Carbon (High)' },
+        verifier: { conversation_id: 'w-ver', role: 'worker', phase: 'RUNNING', wake_mode: 'mentions', model: 'Claude Opus 5.5 (High)' },
+        monitor: { conversation_id: 'w-mon', role: 'worker', phase: 'KILLED', killed: true, model: 'Gemini 3.8 Flash (Low)' },
+      },
+    })
+  );
+  writeFileSync(
+    join(swarmDir, 'board.jsonl'),
+    [
+      JSON.stringify({ seq: 1, agent: 'coordinator', kind: 'brief', text: '@kit Audit sidecar-kit', time: '2026-11-12 09:45:05' }),
+      JSON.stringify({ seq: 2, agent: 'kit', text: '@verifier Ready for review', time: '2026-11-12 09:50:10' }),
+    ].join('\n') + '\n'
+  );
+
+  try {
+    clearConversationDetails();
+    clearRpcCache();
+    const res = await fetchFullTelemetry({
+      lsAddress: 'http://127.0.0.1:59916',
+      csrfToken: 't',
+      appDataDir: tmp,
+      configPath: join(tmp, 'config.json'),
+      storagePath: join(tmp, 'storage.json'),
+      hostCascadeId: coordId,
+      fetchFn: async (url) => {
+        const method = String(url).split('/').pop();
+        let body = {};
+        if (method === 'GetAllCascadeTrajectories') {
+          body = { trajectorySummaries: { [coordId]: { stepCount: 3, status: 'CASCADE_RUN_STATUS_RUNNING', annotations: { title: 'Swarm Coordinator' } } } };
+        } else if (method === 'GetCascadeTrajectorySteps') {
+          body = {
+            steps: [
+              { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'Run swarm' } },
+              { type: 'CORTEX_STEP_TYPE_GENERIC', metadata: { toolCall: { name: 'swarm', argumentsJson: '{"action":"add","name":"kit"}' } } },
+              { type: 'CORTEX_STEP_TYPE_GENERIC', metadata: { toolCall: { name: 'read_board', argumentsJson: '{"since":0}' } } },
+            ],
+          };
+        } else if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
+          body = {
+            generatorMetadata: [
+              {
+                stepIndices: [1, 2],
+                chatModel: {
+                  usage: { inputTokens: 28000, outputTokens: 400 },
+                  chatStartMetadata: {
+                    contextWindowMetadata: {
+                      maxContextTokens: 256000,
+                      tokenBreakdown: {
+                        groups: [
+                          {
+                            type: 'TOKEN_TYPE_CHAT_MESSAGES',
+                            numTokens: 28000,
+                            children: [
+                              { name: '0: USER_INPUT', numTokens: 4000 },
+                              { name: '1: GENERIC', numTokens: 14000 },
+                              { name: '2: GENERIC', numTokens: 10000 },
+                            ],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          };
+        }
+        return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+      },
+    });
+
+    assert.equal(res.subagents.totalCount, 3);
+    assert.equal(res.subagents.runningCount, 1);
+    assert.equal(res.subagents.formattedParentContextTokens, '14.0k');
+    const byId = Object.fromEntries(res.subagents.items.map((x) => [x.cascadeId, x]));
+    assert.equal(byId['w-kit'].title, '@kit');
+    assert.equal(byId['w-kit'].statusBadge, 'Running');
+    assert.equal(byId['w-kit'].promptPreview, 'Audit sidecar-kit');
+    assert.equal(byId['w-kit'].spawnStepRef, '#1');
+    assert.equal(byId['w-kit'].formattedParentContextTokens, '14.0k');
+    assert.equal(byId['w-ver'].statusBadge, 'Waiting');
+    assert.equal(byId['w-ver'].modelBadge, 'Claude Opus 5.5 (High)');
+    assert.equal(byId['w-mon'].statusBadge, 'Stopped');
+    assert.equal(byId['w-mon'].modelBadge, 'Gemini 3.8 Flash (Low)');
+
+    const topSteps = res.turnInsights.culprits.topChatSteps;
+    assert.equal(topSteps[0].label, 'Swarm: add @kit');
+    assert.equal(topSteps[0].badge, 'Subagent');
+    assert.equal(topSteps[0].subagentId, 'w-kit');
+    assert.equal(topSteps[1].label, 'Swarm: read_board (since #0)');
+    assert.equal(topSteps[1].badge, 'Subagent');
+  } finally {
+    clearConversationDetails();
+    clearRpcCache();
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
