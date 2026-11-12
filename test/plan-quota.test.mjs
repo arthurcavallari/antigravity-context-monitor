@@ -168,3 +168,35 @@ test('extractPlanUsage marks no Google quota group active for an antigravity-add
   assert.equal(builtIn.customModel, false);
   assert.equal(builtIn.activeGroupId, 'gemini');
 });
+
+test('setAiCreditsOverageSetting sends minimal partial userConfig merge to JetboxWriteState without forwarding unknown disk keys [CM-03]', async () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'cm03-test-'));
+  const cfgPath = join(tmpDir, 'config.json');
+  writeFileSync(
+    cfgPath,
+    JSON.stringify({
+      sidecars: { 'context-monitor': { enabled: true } },
+      legacyExperimentalFlag: true,
+      userSettings: { themePresetDark: 'Onyx Dark', useAiCredits: false },
+    })
+  );
+  let sentBody = null;
+  try {
+    await setAiCreditsOverageSetting(true, {
+      configPath: cfgPath,
+      lsAddress: '127.0.0.1:59903',
+      csrfToken: 'tok',
+      fetchFn: async (_url, init) => {
+        sentBody = JSON.parse(init.body);
+        return { ok: true, status: 200, text: async () => '{}' };
+      },
+    });
+    assert.deepEqual(sentBody, { userConfig: { userSettings: { useAiCredits: true } } });
+    const saved = JSON.parse(readFileSync(cfgPath, 'utf8'));
+    assert.equal(saved.legacyExperimentalFlag, true);
+    assert.equal(saved.userSettings.themePresetDark, 'Onyx Dark');
+    assert.equal(saved.userSettings.useAiCredits, true);
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
