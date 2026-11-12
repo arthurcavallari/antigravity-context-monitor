@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { parseHTML } from 'linkedom';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
+import { AGY_CLIENT_JS } from 'antigravity-sidecar-kit/shell';
+import { installDomPolyfills } from 'antigravity-sidecar-kit/ui';
 
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui');
 const UI_SCRIPTS = [
@@ -292,4 +294,75 @@ test('narrow-pane helpers: tab labels can truncate, and category rows carry thei
     turnInsights: {},
   });
   assert.match(tab, /class="row-tokens" data-pct="20\.0%">50\.0k</);
+});
+
+test('native Aux Pane passes Ctrl+Tab and Ctrl+Shift+./, chords through to preload.js while ?host=hangar forwards agy:shortcut-forwarded [CM-11]', () => {
+  const runChordSuite = (search) => {
+    const { window, document, HTMLElement, customElements, CustomEvent } = parseHTML(
+      '<!doctype html><html><body><div id="app"></div></body></html>',
+    );
+    for (const key of ['AgyUI', 'AgyShell', 'ContextMonitor']) window[key] = undefined;
+    installDomPolyfills(window);
+    const parentMessages = [];
+    window.parent = { postMessage: (msg) => parentMessages.push(msg) };
+    window.top = window.parent;
+    window.location = { search, protocol: 'http:', href: `http://127.0.0.1:52320/${search}` };
+    const ctx = vm.createContext({
+      window,
+      document,
+      HTMLElement,
+      customElements,
+      CustomEvent,
+      URL,
+      URLSearchParams,
+      setTimeout: () => 0,
+      clearTimeout() {},
+    });
+    vm.runInContext(AGY_CLIENT_JS, ctx, { filename: 'shell.js' });
+    vm.runInContext(buildAgyUiJs(['core', 'tabs', 'overlays', 'controls', 'surfaces']), ctx, { filename: 'ui.js' });
+    for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    window.ContextMonitor.apiCall = () => new Promise(() => {});
+    vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+
+    const appEl = document.getElementById('app');
+    window.ContextMonitor.setHtml(
+      appEl,
+      window.ContextMonitor.renderTopHeaderAndTabs({ model: { badgeLabel: 'Gemini' }, context: {} }, { activeTab: 'context' }),
+    );
+    const tabBtn = document.getElementById('tab-context');
+    let reachedWindow = 0;
+    let preventedCount = 0;
+    window.addEventListener('keydown', (e) => {
+      reachedWindow++;
+      if (e.defaultPrevented) preventedCount++;
+    });
+
+    const chords = [
+      { key: 'Tab', code: 'Tab', keyCode: 9, ctrlKey: true, shiftKey: false },
+      { key: 'Tab', code: 'Tab', keyCode: 9, ctrlKey: true, shiftKey: true },
+      { key: '.', code: 'Period', keyCode: 190, ctrlKey: true, shiftKey: true },
+      { key: ',', code: 'Comma', keyCode: 188, ctrlKey: true, shiftKey: true },
+    ];
+    for (const ch of chords) {
+      const ev = new window.KeyboardEvent('keydown', { ...ch, bubbles: true, cancelable: true });
+      tabBtn.dispatchEvent(ev);
+    }
+    return {
+      reachedWindow,
+      preventedCount,
+      forwarded: parentMessages.filter((m) => m?.type === 'agy:shortcut-forwarded'),
+    };
+  };
+
+  const nativeAux = runChordSuite('?conversationId=conv-1');
+  assert.equal(nativeAux.forwarded.length, 0, 'native Aux Pane must not hijack chords into agy:shortcut-forwarded');
+  assert.equal(nativeAux.reachedWindow, 4, 'all 4 chords bubble cleanly to window where preload.js listens');
+  assert.equal(nativeAux.preventedCount, 0, 'chords remain un-prevented for preload.js sidecar-key-event');
+
+  const hangarHost = runChordSuite('?conversationId=conv-1&host=hangar');
+  assert.equal(hangarHost.forwarded.length, 4, 'Hangar host still receives agy:shortcut-forwarded for all 4 chords');
+  assert.deepEqual(
+    hangarHost.forwarded.map((m) => m.dir),
+    [1, -1, 1, -1],
+  );
 });
