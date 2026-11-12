@@ -615,4 +615,25 @@ test('buildMcpAndCustomizationsCatalog and normalizeSidecars resolve pluginDir w
   });
 });
 
+test('fetchDiagnosticsSnapshot maps GetRemoteControlInfoResponse.instanceId [CM-02]', async () => {
+  const { fetchDiagnosticsSnapshot } = await import('../lib/diagnostics.mjs');
+  const snap = await fetchDiagnosticsSnapshot({
+    lsAddress: '127.0.0.1:59902',
+    csrfToken: 'tok',
+    fetchFn: async (url) => {
+      const method = url.split('/').pop();
+      const payload =
+        method === 'GetRemoteControlInfo'
+          ? { enabled: true, instanceId: 'rc-instance-2312', companionOrigin: 'https://companion.antigravity.google' }
+          : {};
+      return { ok: true, status: 200, text: async () => JSON.stringify(payload) };
+    },
+  });
+  assert.deepEqual(snap.remoteControl, {
+    enabled: true,
+    instanceId: 'rc-instance-2312',
+    companionOrigin: 'https://companion.antigravity.google',
+  });
+});
+
 
