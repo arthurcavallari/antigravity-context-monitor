@@ -416,3 +416,38 @@ test('diagnostics-tab and context-tab delegate clicks cleanly through #app witho
   assert.equal(posted[0].msg.pluginId, 'broken-plugin');
   assert.equal(posted[0].msg.targetId, 'broken-sc');
 });
+
+test('notifyAgent resolves async window.sidecar.getWorkspaceUris() on _new conversation panes [CM-08]', async () => {
+  const notifyBodies = [];
+  const window = {
+    location: { search: '?conversationId=_new' },
+    sidecar: {
+      conversationId: '_new',
+      getWorkspaceUris: async () => ['file:///c%3A/Users/arthu/IdeaProjects/antigravity-context-monitor'],
+      onWorkspaceChange: () => () => {},
+    },
+    addEventListener() {},
+  };
+  window.parent = {};
+  const ctx = vm.createContext({
+    window,
+    document: { documentElement: { style: { setProperty() {}, removeProperty() {} }, dataset: {} } },
+    URLSearchParams,
+  });
+  vm.runInContext(readFileSync(join(UI_DIR, 'core.js'), 'utf8'), ctx, { filename: 'core.js' });
+  window.ContextMonitor.apiCall = async (path, body) => {
+    notifyBodies.push({ path, body });
+    return { ok: true };
+  };
+
+  await window.ContextMonitor.notifyAgent({
+    message: 'Sidecar docker-ops failed with EADDRINUSE',
+    title: 'Sidecar Diagnostic',
+  });
+
+  assert.equal(notifyBodies.length, 1);
+  assert.equal(notifyBodies[0].path, '/api/notify');
+  assert.equal(notifyBodies[0].body.conversationId, '_new');
+  assert.equal(notifyBodies[0].body.workspace, 'file:///c%3A/Users/arthu/IdeaProjects/antigravity-context-monitor');
+  assert.equal(window.ContextMonitor.activeWorkspaceUri, 'file:///c%3A/Users/arthu/IdeaProjects/antigravity-context-monitor');
+});

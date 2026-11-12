@@ -249,7 +249,17 @@
   } = {}) {
     const p = new URLSearchParams(window.location?.search || '');
     const conv = cascadeId || conversationId || cm.activeConversationId || window.sidecar?.conversationId || p.get('conversationId') || '';
-    const ws = workspace || window.sidecar?.workspace || p.get('workspace') || '';
+    let bridgeWs = cm.activeWorkspaceUri || window.sidecar?.workspace || '';
+    if (!workspace && !bridgeWs && typeof window.sidecar?.getWorkspaceUris === 'function') {
+      try {
+        const uris = await window.sidecar.getWorkspaceUris();
+        if (Array.isArray(uris) && typeof uris[0] === 'string' && uris[0]) {
+          bridgeWs = uris[0];
+          cm.activeWorkspaceUri = bridgeWs;
+        }
+      } catch {}
+    }
+    const ws = workspace || bridgeWs || p.get('workspace') || '';
     return cm.apiCall('/api/notify', {
       message: String(message || ''),
       severity,

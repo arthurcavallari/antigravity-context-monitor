@@ -271,8 +271,9 @@
     if (idx) state.openCheckpoints[det.open ? 'add' : 'delete'](idx);
   }, true);
 
-  window.sidecar?.onWorkspaceChange?.((uris) => {
-    const next = Array.isArray(uris) ? uris : [];
+  const applyWorkspaceUris = (uris) => {
+    const next = Array.isArray(uris) ? uris.filter((u) => typeof u === 'string' && u) : [];
+    window.ContextMonitor.activeWorkspaceUri = next[0] || '';
     if (JSON.stringify(next) === JSON.stringify(state.workspaceUris)) return;
     state.workspaceUris = next;
     state.autoRootCascadeId = '';
@@ -281,7 +282,13 @@
       syncActiveConvId();
     }
     refreshTelemetry(false, true);
-  });
+  };
+  if (typeof window.sidecar?.getWorkspaceUris === 'function') {
+    Promise.resolve(window.sidecar.getWorkspaceUris())
+      .then((uris) => applyWorkspaceUris(uris))
+      .catch(() => {});
+  }
+  window.sidecar?.onWorkspaceChange?.((uris) => applyWorkspaceUris(uris));
 
   const poller = createVisibilityPoller({
     autoStart: true,
