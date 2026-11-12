@@ -300,4 +300,23 @@ test('renderContextTab renders .subagent-banner breadcrumb with Parent and Root 
   ui.setHtml(logTarget, [{ level: 'error', text: HOSTILE }].map((l) => ui.html`<div class="log-line ${ui.esc(l.level)}">${ui.esc(l.text)}</div>`));
   assert.equal(logTarget.innerHTML, `<div class="log-line error">${HOSTILE_ESCAPED}</div>`);
   assert.equal(typeof ui.createVisibilityPoller, 'function');
+
+  const drawerHtml = ui.renderModelProfileDrawer(
+    {
+      model: {
+        label: 'Claude Opus 5.5 (High)',
+        thinkingEffort: 'High',
+        maxOutputFormatted: '65.5k',
+        contextWindowOptions: [
+          { name: `128K ${HOSTILE}`, expensive: false },
+          { name: '1M', expensive: true },
+        ],
+      },
+      context: { formattedCeiling: '128k', formattedNativeCeiling: '1.0M' },
+    },
+    { modelProfileOpen: true }
+  );
+  assert.ok(!drawerHtml.includes(HOSTILE));
+  assert.match(drawerHtml, /Context Options:/);
+  assert.ok(drawerHtml.includes(`128K ${HOSTILE_ESCAPED} · 1M (extended)`));
 });

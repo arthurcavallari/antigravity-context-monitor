@@ -1376,3 +1376,37 @@ test('collectSubagentTree resolves 2.31.0 SubagentSpec.modelOption strings, Suba
   assert.equal(byId['sub-oneof-inherit'].inherit, true);
   assert.equal(byId['sub-oneof-inherit'].modelBadge, 'Inherited');
 });
+
+test('resolveModelMetadata parses ClientModelConfig.contextWindowOptions for cold ceiling and max native window [CM-15]', () => {
+  const catalog = {
+    clientModelConfigs: [
+      {
+        label: 'Claude Opus 5.5 (High)',
+        modelId: 'claude-opus-5-5-high',
+        modelOrAlias: { model: 'MODEL_CLAUDE_4_OPUS' },
+        contextWindowOptions: [
+          { name: '128K', description: 'Standard 128K context window', expensive: false },
+          { name: '1M', description: 'Extended 1M context window', expensive: true },
+        ],
+      },
+    ],
+    defaultOverrideModelConfig: { modelOrAlias: { model: 'MODEL_CLAUDE_4_OPUS' } },
+  };
+  const cold = resolveModelMetadata(catalog, null, []);
+  assert.equal(cold.ceiling, 128_000);
+  assert.equal(cold.ceilingFormatted, '128k');
+  assert.equal(cold.nativeCeiling, 1_000_000);
+  assert.equal(cold.nativeCeilingFormatted, '1.0M');
+  assert.equal(cold.contextWindowOptionsFormatted, '128K · 1M (extended)');
+
+  const liveExtended = resolveModelMetadata(
+    catalog,
+    {
+      plannerConfig: { planModel: 'MODEL_CLAUDE_4_OPUS' },
+      chatModel: { chatStartMetadata: { contextWindowMetadata: { maxContextTokens: 1_000_000 } } },
+    },
+    []
+  );
+  assert.equal(liveExtended.ceiling, 1_000_000);
+  assert.equal(liveExtended.ceilingFormatted, '1.0M');
+});

@@ -45,6 +45,17 @@
               ? html`${esc(model.maxOutputFormatted)} tokens/turn`
               : (model.isCustom ? 'Set by your provider' : '65.5k tokens/turn')}</strong>
           </div>
+          ${!model.isCustom && Array.isArray(model.contextWindowOptions) && model.contextWindowOptions.length > 0
+            ? html`
+              <div class="model-spec-item" style="grid-column:span 2">
+                <span class="spec-label">Context Options:</span>
+                <strong>${esc(
+                  model.contextWindowOptionsFormatted ||
+                    model.contextWindowOptions.map((o) => `${o.name}${o.expensive ? ' (extended)' : ''}`).join(' · '),
+                )}</strong>
+              </div>
+            `
+            : ''}
           <div class="model-spec-item" style="grid-column:span 2">
             <span class="spec-label">Prompt Fit:</span>
             <strong>${esc(fitText)}</strong>
