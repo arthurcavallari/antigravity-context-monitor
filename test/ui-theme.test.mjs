@@ -152,3 +152,41 @@ test('2.31.0 typography scale, --app-font-scale, --chart-1..6 live theme switch,
   const componentsCss = readFileSync(join(UI_DIR, 'components.css'), 'utf8');
   assert.match(componentsCss, /\.cm-dialog \{[^}]*margin: auto;/, 'dialog centers under host * { margin: 0 } reset');
 });
+
+test('cold Onyx Dark defaults resolve #070708/#2F71E3 and mark data-newux-theme=onyx on #070708 and #070709 [CM-12]', async () => {
+  const { resolveTelemetryTheme } = await import('../lib/context-telemetry.mjs');
+  const coldTheme = resolveTelemetryTheme({ userSettings: {} });
+  assert.equal(coldTheme.cssVariables['--background'], '#070708');
+  assert.equal(coldTheme.cssVariables['--foreground'], '#FFFFFF');
+  assert.equal(coldTheme.cssVariables['--primary'], '#2F71E3');
+
+  const css = readFileSync(join(UI_DIR, 'styles.css'), 'utf8');
+  assert.match(css, /--cm-bg:\s*var\(--agy-canvas,\s*var\(--background,\s*#070708\)\)/);
+  assert.match(css, /--cm-accent:\s*var\(--agy-accent,\s*var\(--primary,\s*#2F71E3\)\)/);
+
+  const bodyAttrs = new Map();
+  const { applyTheme } = loadCore();
+  const coreWithBody = (() => {
+    const props = new Map();
+    const document = {
+      body: { setAttribute: (k, v) => bodyAttrs.set(k, v) },
+      documentElement: {
+        dataset: {},
+        style: { setProperty: (k, v) => props.set(k, v), removeProperty: (k) => props.delete(k) },
+      },
+    };
+    const window = {};
+    vm.runInContext(readFileSync(join(UI_DIR, 'core.js'), 'utf8'), vm.createContext({ window, document }), { filename: 'core.js' });
+    return window.ContextMonitor.applyTheme;
+  })();
+
+  coreWithBody({ themeType: 'dark', cssVariables: { '--background': '#070708', '--foreground': '#FFFFFF' } });
+  assert.equal(bodyAttrs.get('data-newux-theme'), 'onyx');
+
+  coreWithBody({ themeType: 'dark', cssVariables: { '--background': '#1e1e2e', '--foreground': '#cdd6f4' } });
+  assert.equal(bodyAttrs.get('data-newux-theme'), '');
+
+  coreWithBody({ themeType: 'dark', cssVariables: { '--background': '#070709', '--foreground': '#FFFFFF' } });
+  assert.equal(bodyAttrs.get('data-newux-theme'), 'onyx');
+  assert.equal(typeof applyTheme, 'function');
+});

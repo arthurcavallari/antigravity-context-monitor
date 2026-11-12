@@ -118,13 +118,24 @@
     if (cv) {
       if (!fromServer) hasLiveHostTheme = true;
       const isLight = theme.themeType === 'light' || theme.isDark === false;
-      const bg = cv['--background'] || cv['--vscode-editor-background'] || (isLight ? '#f8f9fc' : '#101010');
-      const fg = cv['--foreground'] || cv['--vscode-editor-foreground'] || (isLight ? '#121317' : '#cccccc');
+      const bg = cv['--background'] || cv['--vscode-editor-background'] || (isLight ? '#f8f9fc' : '#070708');
+      const fg = cv['--foreground'] || cv['--vscode-editor-foreground'] || (isLight ? '#121317' : '#FFFFFF');
       const inkSoft = cv['--agy-ink-soft'] || `color-mix(in srgb, ${fg} 88%, ${bg})`;
-      window.AgyShell?.applyAgyThemeFromPayload?.({
-        ...theme,
-        cssVariables: { ...cv, '--background': bg, '--foreground': fg, '--agy-ink-soft': inkSoft },
-      });
+      const isOnyx =
+        Boolean(cv['--onyx-key'] || cv['--onyx-well']) ||
+        /onyx/i.test(String(theme.theme || theme.preset || '')) ||
+        /^#0[57]0[57]0[789]$/i.test(String(bg).trim()) ||
+        (isLight &&
+          /^#fff(?:fff)?$/i.test(String(bg).trim()) &&
+          /^rgb\(\s*10[\s,]+10[\s,]+12\b/i.test(String(cv['--secondary'] || cv['--muted'] || '').trim()));
+      if (window.AgyShell?.applyAgyThemeFromPayload) {
+        window.AgyShell.applyAgyThemeFromPayload({
+          ...theme,
+          cssVariables: { ...cv, '--background': bg, '--foreground': fg, '--agy-ink-soft': inkSoft },
+        });
+      } else if (document.body?.setAttribute) {
+        document.body.setAttribute('data-newux-theme', isOnyx ? 'onyx' : '');
+      }
       const hasNative = Boolean(cv['--background'] || cv['--foreground']);
       if (hasNative || cv['--vscode-editor-background'] || cv['--vscode-editor-foreground']) {
         root.dataset.theme = isLight ? 'light' : 'dark';
@@ -161,8 +172,8 @@
     }
     // Legacy: a server payload with `vars` only.
     const isLight = (theme.mode || 'dark') === 'light';
-    const bg = theme.vars['--background'] || theme.vars['--cm-bg'] || (isLight ? '#f8f9fc' : '#101010');
-    const fg = theme.vars['--foreground'] || theme.vars['--cm-text'] || (isLight ? '#121317' : '#cccccc');
+    const bg = theme.vars['--background'] || theme.vars['--cm-bg'] || (isLight ? '#f8f9fc' : '#070708');
+    const fg = theme.vars['--foreground'] || theme.vars['--cm-text'] || (isLight ? '#121317' : '#FFFFFF');
     root.dataset.theme = theme.mode || 'dark';
     for (const [k, v] of Object.entries(theme.vars)) {
       root.style.setProperty(k, v);

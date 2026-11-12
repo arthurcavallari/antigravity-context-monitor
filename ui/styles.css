@@ -1,13 +1,13 @@
 :root {
-  --cm-bg: var(--agy-canvas, var(--background, #101010));
-  --cm-surface: var(--agy-sunken, var(--muted, color-mix(in srgb, #cccccc 2.5%, #101010)));
-  --cm-card: var(--agy-card, var(--card, color-mix(in srgb, #cccccc 5%, #101010)));
-  --cm-secondary: var(--agy-control, var(--secondary, color-mix(in srgb, #cccccc 12%, #101010)));
-  --cm-secondary-fg: var(--agy-ink-soft, var(--secondary-foreground, color-mix(in srgb, #cccccc 88%, #101010)));
-  --cm-border: var(--agy-rule, var(--border, color-mix(in srgb, #cccccc 8%, transparent)));
-  --cm-text: var(--agy-ink, var(--foreground, #cccccc));
-  --cm-muted: var(--agy-ink-soft, var(--muted-foreground, color-mix(in srgb, #cccccc 65%, #101010)));
-  --cm-accent: var(--agy-accent, var(--primary, #007acc));
+  --cm-bg: var(--agy-canvas, var(--background, #070708));
+  --cm-surface: var(--agy-sunken, var(--muted, color-mix(in srgb, #FFFFFF 2.5%, #070708)));
+  --cm-card: var(--agy-card, var(--card, color-mix(in srgb, #FFFFFF 5%, #070708)));
+  --cm-secondary: var(--agy-control, var(--secondary, color-mix(in srgb, #FFFFFF 12%, #070708)));
+  --cm-secondary-fg: var(--agy-ink-soft, var(--secondary-foreground, color-mix(in srgb, #FFFFFF 88%, #070708)));
+  --cm-border: var(--agy-rule, var(--border, color-mix(in srgb, #FFFFFF 8%, transparent)));
+  --cm-text: var(--agy-ink, var(--foreground, #FFFFFF));
+  --cm-muted: var(--agy-ink-soft, var(--muted-foreground, color-mix(in srgb, #FFFFFF 65%, #070708)));
+  --cm-accent: var(--agy-accent, var(--primary, #2F71E3));
   --cm-green: var(--status-ok, var(--agy-ok, #7aae66));
   --cm-green-dot: var(--status-ok-dot, var(--color-green-500, #63984f));
   --cm-yellow: var(--status-warn, var(--agy-warn, #f3c949));
