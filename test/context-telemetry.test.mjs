@@ -1329,3 +1329,50 @@ test('fetchFullTelemetry hydrates cold JetboxSubscribeToSummaries, filters side 
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('collectSubagentTree resolves 2.31.0 SubagentSpec.modelOption strings, SubagentModelOption oneof objects, and Carbon tier [CM-05]', () => {
+  const catalog = {
+    clientModelConfigs: [
+      { label: 'Gemini 4 Carbon (High)', modelId: 'gemini-4-carbon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M427' } },
+      { label: 'Gemini 3.8 Flash (Low)', modelId: 'gemini-3.8-flash-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M47' } },
+    ],
+  };
+  const tree = collectSubagentTree(
+    {
+      trajectorySummaries: {
+        'root-opt': { status: 'CASCADE_RUN_STATUS_IDLE' },
+        'sub-str': {
+          trajectoryMetadata: {
+            parentConversationId: 'root-opt',
+            rootConversationId: 'root-opt',
+            subagentSpec: { role: 'Flash Indexer', modelOption: 'flash' },
+          },
+        },
+        'sub-oneof-carbon': {
+          trajectoryMetadata: {
+            parentConversationId: 'root-opt',
+            rootConversationId: 'root-opt',
+            subagentSpec: { role: 'Carbon Verifier', modelOption: { namedModel: 'carbon' } },
+          },
+        },
+        'sub-oneof-inherit': {
+          trajectoryMetadata: {
+            parentConversationId: 'root-opt',
+            rootConversationId: 'root-opt',
+            subagentSpec: { role: 'Inherited Helper', modelOption: { inherit: {} } },
+          },
+        },
+      },
+    },
+    'root-opt',
+    'root-opt',
+    catalog
+  );
+  const byId = Object.fromEntries(tree.items.map((x) => [x.cascadeId, x]));
+  assert.equal(byId['sub-str'].inherit, false);
+  assert.equal(byId['sub-str'].modelBadge, 'Gemini 3.8 Flash (Low)');
+  assert.equal(byId['sub-oneof-carbon'].inherit, false);
+  assert.equal(byId['sub-oneof-carbon'].modelBadge, 'Gemini 4 Carbon (High)');
+  assert.equal(byId['sub-oneof-inherit'].inherit, true);
+  assert.equal(byId['sub-oneof-inherit'].modelBadge, 'Inherited');
+});
