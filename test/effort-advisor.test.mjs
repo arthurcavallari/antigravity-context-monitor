@@ -770,3 +770,46 @@ test('analyzeModelAndEffortFit: skips antigravity-add-model custom-model turns a
   assert.equal(res.latestTurnFit.status, 'unused_effort');
   assert.equal(res.latestTurnFit.recommendedModel, '3.8 Flash (Low)');
 });
+
+test('Gemini 4 Carbon (M427/M437/M438) is recognized as flagship over Argon and resolves cold fallbacks [CM-04]', async () => {
+  const { resolveModelMetadata } = await import('../lib/session-resolver.mjs');
+  const coldHigh = resolveModelMetadata({}, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M427' } });
+  const coldMed = resolveModelMetadata({}, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M437' } });
+  const coldLow = resolveModelMetadata({}, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M438' } });
+
+  assert.equal(coldHigh.badgeLabel, 'Gemini 4 Carbon (High)');
+  assert.equal(coldHigh.thinkingEffort, 'High');
+  assert.equal(coldHigh.nativeCeiling, 1_048_576);
+  assert.equal(coldMed.badgeLabel, 'Gemini 4 Carbon (Medium)');
+  assert.equal(coldMed.thinkingEffort, 'Medium');
+  assert.equal(coldMed.nativeCeiling, 1_048_576);
+  assert.equal(coldLow.badgeLabel, 'Gemini 4 Carbon (Low)');
+  assert.equal(coldLow.thinkingEffort, 'Low');
+  assert.equal(coldLow.nativeCeiling, 256_000);
+
+  const catalog = {
+    clientModelConfigs: [
+      { label: 'Gemini 4 Carbon (High)', modelId: 'gemini-4-carbon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M427' } },
+      { label: 'Gemini 4 Carbon (Medium)', modelId: 'gemini-4-carbon-medium', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M437' } },
+      { label: 'Gemini 4 Carbon (Low)', modelId: 'gemini-4-carbon-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M438' } },
+      ...MOCK_MODEL_CONFIG.clientModelConfigs,
+    ],
+  };
+  const steps = [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'git commit', userConfig: { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M438' } } } },
+    { type: 'CORTEX_STEP_TYPE_RUN_COMMAND', runCommand: { commandLine: 'git commit -m "chore"', exitCode: 0 } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Committed.' } },
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'fix lock race', userConfig: { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M437' } } } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Retrying.' } },
+  ];
+  const gens = [
+    { stepIndices: [1, 2], chatModel: { model: 'MODEL_PLACEHOLDER_M438', usage: { inputTokens: 10000, outputTokens: 120, thinkingOutputTokens: 30 } } },
+    { stepIndices: [4], chatModel: { model: 'MODEL_PLACEHOLDER_M437', retryInfos: [{ retryReason: 'RETRY_REASON_MODEL_CORRECTABLE' }], usage: { inputTokens: 20000, outputTokens: 500, thinkingOutputTokens: 300 } } },
+  ];
+  const fit = analyzeModelAndEffortFit(gens, steps, catalog);
+  assert.equal(fit.flaggedTurnsCount, 2);
+  assert.equal(fit.evaluatedTurns[0].status, 'housekeeping');
+  assert.equal(fit.evaluatedTurns[0].recommendedModel, '3.8 Flash (Low)');
+  assert.equal(fit.evaluatedTurns[1].status, 'thrashing');
+  assert.equal(fit.evaluatedTurns[1].recommendedModel, '4 Carbon (High)');
+});
