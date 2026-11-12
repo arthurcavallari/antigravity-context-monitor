@@ -396,8 +396,19 @@ test('diagnostics-tab and context-tab delegate clicks cleanly through #app witho
   assert.equal(notifyCalls.length, 1);
   assert.equal(domDoc.getElementById('cm-dialog'), null, 'the dialog closes once the diagnostic is sent');
 
+  assert.equal(
+    domDoc.querySelector('[data-action="hangar-navigate"]'),
+    null,
+    'native Aux Pane (no ?host=hangar) must not render dead Inspect in Hangar buttons'
+  );
+  window.location.search = '?conversationId=c-diag&host=hangar';
+  const contextTabBtn = domDoc.querySelector('[data-tab="context"]');
+  await appClickHandler({ target: contextTabBtn });
+  await appClickHandler({ target: domDoc.querySelector('[data-tab="diagnostics"]') });
+  await timers.advance(0);
+
   const navBtn = domDoc.querySelector('[data-action="hangar-navigate"]');
-  assert.ok(navBtn);
+  assert.ok(navBtn, '?host=hangar renders Inspect in Hangar button');
   await appClickHandler({ target: navBtn });
   assert.equal(posted.length, 1);
   assert.equal(posted[0].msg.type, 'hangar-navigate');

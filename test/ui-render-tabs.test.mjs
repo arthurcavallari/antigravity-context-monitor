@@ -8,8 +8,8 @@ import vm from 'node:vm';
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui');
 const UI_SCRIPTS = ['core.js', 'components/subagent-drawer.js', 'components/context-drawers.js', 'components/context-tab.js', 'components/mcp-budgets-tab.js', 'components/diagnostics-tab.js'];
 
-function loadUi() {
-  const ctx = vm.createContext({ window: {} });
+function loadUi(search = '') {
+  const ctx = vm.createContext({ window: { location: { search } } });
   for (const rel of UI_SCRIPTS) {
     vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
   }
@@ -17,6 +17,7 @@ function loadUi() {
 }
 
 const ui = loadUi();
+const hangarUi = loadUi('?host=hangar');
 const HOSTILE = '<img src=x onerror="alert(1)">';
 const HOSTILE_ESCAPED = '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;';
 
@@ -134,7 +135,7 @@ test('renderDiagnosticsLists escapes terminal titles and sidecar errors', () => 
   assert.ok(empty.includes('No active background terminals'));
   assert.ok(empty.includes('No sidecars registered'));
 
-  const mcpWithPlugin = ui.renderMcpBudgetsTab({
+  const mcpPayload = {
     turnInsights: {
       topCulprits: {
         skillInjections: {
@@ -157,22 +158,27 @@ test('renderDiagnosticsLists escapes terminal titles and sidecar errors', () => 
         formattedTokens: '1.1k',
       }],
     },
-  });
+  };
+  const mcpAux = ui.renderMcpBudgetsTab(mcpPayload);
+  assert.equal((mcpAux.match(/data-action="hangar-navigate"/g) || []).length, 0, 'native Aux Pane hides Inspect in Hangar buttons');
+  const mcpWithPlugin = hangarUi.renderMcpBudgetsTab(mcpPayload);
   assert.match(mcpWithPlugin, /data-action="hangar-navigate"\s+data-plugin-id="vercel-plugin"/);
   assert.ok(mcpWithPlugin.includes('nextjs'));
 
-  const diagWithSidecars = ui.renderDiagnosticsLists({
+  const sidecarPayload = {
     sidecars: [
       { sidecarId: 'sc-1', pluginId: 'science-plugin', displayName: 'Science', statusBadge: 'ERRORED', isErrored: true },
       { sidecarId: 'broken-sc', displayName: 'Broken', statusBadge: 'ERRORED', isErrored: true },
       { sidecarId: 'aem-sc', pluginDir: 'aem-65-plugin', pluginName: 'AEM 6.5', displayName: 'AEM', statusBadge: 'ERRORED', isErrored: true },
     ],
-  });
+  };
+  assert.equal((ui.renderDiagnosticsLists(sidecarPayload).match(/data-action="hangar-navigate"/g) || []).length, 0, 'native Aux Pane hides Diagnostics Hangar buttons');
+  const diagWithSidecars = hangarUi.renderDiagnosticsLists(sidecarPayload);
   assert.match(diagWithSidecars, /data-action="hangar-navigate"\s+data-plugin-id="science-plugin"\s+data-target-tab="sidecars"\s+data-sidecar-id="sc-1"/);
   assert.match(diagWithSidecars, /data-action="hangar-navigate"\s+data-plugin-id="broken-sc"\s+data-target-tab="sidecars"\s+data-sidecar-id="broken-sc"/);
   assert.match(diagWithSidecars, /data-action="hangar-navigate"\s+data-plugin-id="aem-65-plugin"\s+data-target-tab="sidecars"\s+data-sidecar-id="aem-sc"/);
 
-  const mcpPluginVariants = ui.renderMcpBudgetsTab({
+  const mcpPluginVariants = hangarUi.renderMcpBudgetsTab({
     mcpCatalog: {
       servers: [
         {

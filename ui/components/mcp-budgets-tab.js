@@ -11,7 +11,7 @@
       ? cm.pickSafeNavId(srv.pluginId, srv.pluginDir, srv.pluginName)
       : (srv.pluginId || srv.pluginDir || srv.pluginName || '');
     const labelRef = String(srv.pluginName || pluginRef).trim();
-    const hangarBtn = pluginRef
+    const hangarBtn = pluginRef && cm.isHangarHost?.()
       ? html`
         <button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(pluginRef)}" title="Inspect ${esc(labelRef)} in Hangar">
           Inspect in Hangar

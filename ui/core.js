@@ -268,6 +268,18 @@
     }
     return '';
   }
+  function isHangarHost() {
+    try {
+      const rawSearch = typeof window !== 'undefined' ? String(window.location?.search || '') : '';
+      if (!rawSearch) return false;
+      if (typeof URLSearchParams === 'function') {
+        return new URLSearchParams(rawSearch).get('host') === 'hangar';
+      }
+      return /(?:^\?|&)host=hangar(?:&|$)/.test(rawSearch);
+    } catch {
+      return false;
+    }
+  }
   const cssIdent = (v) => (globalThis.CSS?.escape ? globalThis.CSS.escape(String(v)) : String(v).replace(/[^\w-]/g, (c) => `\\${c}`));
   const cssString = (v) => String(v).replace(/["\\]/g, (c) => `\\${c}`);
   function focusKeyOf(el) {
@@ -583,6 +595,7 @@
     showToast,
     isSafeNavId,
     pickSafeNavId,
+    isHangarHost,
     focusKeyOf,
     restoreFocus,
     openConfirmDialog,

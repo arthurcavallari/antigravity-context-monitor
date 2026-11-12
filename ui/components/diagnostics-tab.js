@@ -195,7 +195,7 @@
               : (s.pluginId || s.pluginDir || s.pluginName || s.sidecarId || '');
             const safeScId = cm.pickSafeNavId ? cm.pickSafeNavId(s.sidecarId) : (s.sidecarId || '');
             const sidecarAttr = safeScId ? html` data-sidecar-id="${esc(safeScId)}"` : '';
-            const hangarBtnHtml = isUnhealthy && navTarget
+            const hangarBtnHtml = isUnhealthy && navTarget && cm.isHangarHost?.()
               ? html`
                 <button type="button" class="agy-btn agy-btn-secondary" data-action="hangar-navigate" data-plugin-id="${esc(navTarget)}" data-target-tab="sidecars"${sidecarAttr} title="Inspect ${esc(s.displayName || navTarget)} in Hangar">
                   Inspect in Hangar
