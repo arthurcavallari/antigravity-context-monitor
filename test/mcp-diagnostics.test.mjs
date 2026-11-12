@@ -636,4 +636,82 @@ test('fetchDiagnosticsSnapshot maps GetRemoteControlInfoResponse.instanceId [CM-
   });
 });
 
+test('restartSidecarById tolerates benign LS "project name already exists" errors and launch.mjs accepts plugin:// origin [CM-10]', async () => {
+  const { copyFileSync } = await import('node:fs');
+  const { spawn } = await import('node:child_process');
+  const { restartSidecarById } = await import('../lib/diagnostics.mjs');
+
+  const benign = await restartSidecarById('context-monitor', {
+    lsAddress: '127.0.0.1:59910',
+    csrfToken: 'tok',
+    fetchFn: async () => ({
+      ok: false,
+      status: 500,
+      text: async () =>
+        JSON.stringify({
+          code: 'internal',
+          message:
+            'internal: failed to sync project permissions for sidecar: failed to create project for sidecar "context-monitor": project name already exists',
+        }),
+    }),
+  });
+  assert.deepEqual(benign, {
+    restarted: true,
+    sidecarId: 'context-monitor',
+    warning: 'project name already exists',
+  });
+
+  await assert.rejects(
+    restartSidecarById('missing-sidecar', {
+      lsAddress: '127.0.0.1:59910',
+      csrfToken: 'tok',
+      fetchFn: async () => ({
+        ok: false,
+        status: 404,
+        text: async () => JSON.stringify({ code: 'not_found', message: 'sidecar not found' }),
+      }),
+    }),
+    /sidecar not found/
+  );
+
+  const dir = mkdtempSync(join(tmpdir(), 'cm-launch-'));
+  const isolatedLauncher = join(dir, 'launch.mjs');
+  copyFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'launch.mjs'), isolatedLauncher);
+  const port = 58100 + Math.floor(Math.random() * 600);
+  const proc = spawn(process.execPath, [isolatedLauncher], {
+    env: {
+      ...process.env,
+      ANTIGRAVITY_SIDECAR_WEB_PORT: String(port),
+      ANTIGRAVITY_SIDECAR_UI_TOKEN: 'tok-plugin-origin',
+      USERPROFILE: dir,
+      HOME: dir,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    let okRes = null;
+    for (let i = 0; i < 20; i++) {
+      try {
+        okRes = await fetch(`http://127.0.0.1:${port}/__launcher/retry`, {
+          method: 'POST',
+          headers: {
+            Origin: `plugin://context-monitor-${port}`,
+            'X-Sidecar-Token': 'tok-plugin-origin',
+          },
+        });
+        break;
+      } catch {
+        await new Promise((r) => setTimeout(r, 40));
+      }
+    }
+    assert.ok(okRes, 'fallback launcher server responded');
+    assert.equal(okRes.status, 200);
+    assert.deepEqual(await okRes.json(), { ok: true });
+  } finally {
+    try { proc.kill(); } catch {}
+    await new Promise((r) => setTimeout(r, 60));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 

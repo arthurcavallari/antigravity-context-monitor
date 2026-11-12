@@ -47,10 +47,10 @@ if (isMain) {
       process.exit(1);
     }
     const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const loopbackRe = /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
+    const allowedOriginRe = /^(?:https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?|plugin:\/\/[a-z0-9][a-z0-9._-]*)$/i;
     const srv = createServer((req, res) => {
       if (req.method === 'POST' && req.url?.startsWith('/__launcher/retry')) {
-        if (req.headers.origin && !loopbackRe.test(req.headers.origin)) {
+        if (req.headers.origin && !allowedOriginRe.test(req.headers.origin)) {
           res.writeHead(403, { 'Content-Type': 'application/json' }).end('{"error":"Forbidden origin"}');
           return;
         }
@@ -65,7 +65,7 @@ if (isMain) {
         res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
         return void srv.close(() => process.exit(1));
       }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(`<!doctype html><html><body style="font-family:system-ui;padding:24px"><h1>Context Monitor dependencies missing</h1><p>Run <code>npm install &amp;&amp; npm run setup</code> in <code>${escHtml(__dirname)}</code>, then click Retry.</p><button onclick="fetch('/__launcher/retry'+(location.search||''),{method:'POST'}).then(()=>setTimeout(()=>location.reload(),800))">Retry</button></body></html>`);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(`<!doctype html><html><body style="font-family:system-ui;padding:24px"><h1>Context Monitor dependencies missing</h1><p>Run <code>npm install &amp;&amp; npm run setup</code> in <code>${escHtml(__dirname)}</code>, then click Retry.</p><button onclick="(function(){var h=new URLSearchParams(location.hash.slice(1)).get('t')||new URLSearchParams(location.search).get('token')||'';fetch('/__launcher/retry'+(location.search||''),{method:'POST',headers:h?{'X-Sidecar-Token':h}:{}}).then(function(){setTimeout(function(){location.reload()},800)})})()">Retry</button></body></html>`);
     }).listen(port, '127.0.0.1');
   }
 }
