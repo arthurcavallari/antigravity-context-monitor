@@ -8,9 +8,15 @@
     return t === 'light' || t === 'dark';
   };
   var theme = '';
+  var host = '';
   try {
-    theme = new URLSearchParams(window.location.search).get('hostTheme') || '';
+    var params = new URLSearchParams(window.location.search);
+    theme = params.get('hostTheme') || '';
+    host = params.get('host') || '';
   } catch (e) {}
+  if (window.parent && window.parent !== window && host !== 'hangar') {
+    root.setAttribute('data-host', 'aux');
+  }
   if (!isTheme(theme)) {
     try {
       theme = window.localStorage.getItem('cm-theme') || '';

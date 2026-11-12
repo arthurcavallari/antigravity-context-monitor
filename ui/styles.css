@@ -16,14 +16,14 @@
   /* Text on blue or yellow tints. Dark keeps Antigravity's own colors; light darkens them (below). */
   --cm-blue-ink: var(--cm-blue);
   --cm-yellow-ink: var(--cm-yellow);
-  /* Data colors with no theme token: defined once here, with light values below. */
-  --cm-chart-teal: #2ec4b6;
+  /* Data colors mapped to Antigravity 2.30+ --chart-1..6 tokens, with dark/light fallbacks. */
+  --cm-chart-teal: #38bdf8;
   --cm-chart-slate: #64748b;
-  --cm-think: var(--chart-purple, #9b59b6);
-  /* The sizes Antigravity uses besides text-xs and text-sm: 13px titles, 11px labels and meta text, and 10px
-     only for chips such as its count chip. */
-  --cm-text-title: 0.8125rem;
-  --cm-text-meta: 0.6875rem;
+  --cm-think: var(--chart-4, var(--chart-purple, #c084fc));
+  /* Antigravity 2.31+ shifted --text-xs..base down one step and introduced --text-compact (13px) and
+     --app-font-scale (jetski.fontSize / 14). Explicit 10px chips stay fixed per host tokens. */
+  --cm-text-title: var(--text-compact, calc(0.875rem * var(--app-font-scale, 1) - 0.0625rem));
+  --cm-text-meta: var(--text-xs, calc(0.6875rem * var(--app-font-scale, 1)));
   --cm-text-chip: 0.625rem;
   /* Antigravity's new-UX card radius. The host stylesheet sets it on the body; this keeps the kit's toasts,
      cards and banners at 16px when that stylesheet can't be fetched (they fall back to 12px otherwise). */
@@ -39,9 +39,9 @@
      theme's warning yellow about 4.1:1. These stay in the same hue and clear 4.5:1. */
   --cm-blue-ink: color-mix(in srgb, var(--color-blue-500, #4380b4) 70%, var(--agy-ink));
   --cm-yellow-ink: color-mix(in srgb, var(--cm-yellow) 80%, var(--agy-ink));
-  --cm-chart-teal: #138a7e;
+  --cm-chart-teal: #0369a1;
   --cm-chart-slate: #556275;
-  --cm-think: var(--chart-purple, #6f42c1);
+  --cm-think: var(--chart-4, var(--chart-purple, #7e22ce));
 }
 
 /* Onyx, Antigravity's default theme: use its own secondary and muted text, which the host sends.
@@ -102,7 +102,7 @@ body {
   background: var(--cm-bg) !important;
   color: var(--cm-text) !important;
   font-family: var(--vscode-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-base, calc(0.875rem * var(--app-font-scale, 1)));
   line-height: 1.4;
 }
 
@@ -112,6 +112,19 @@ body {
   --cm-shell-pad-x: clamp(8px, 2vw, 14px);
   --cm-card-pad-y: 12px;
   --cm-card-pad-x: 12px;
+}
+
+/* Inside Antigravity 2.30+ native Aux Pane inset shell, the host card already clips to 12px and
+   draws a 0.5px --card-edge rim, so omit outer shell padding and outer card border/radius. */
+html[data-host='aux'] {
+  --cm-shell-pad-y: 0px;
+  --cm-shell-pad-x: 0px;
+}
+
+html[data-host='aux'] .context-card {
+  background: transparent;
+  border-width: 0;
+  border-radius: 0;
 }
 
 .dock-shell {
@@ -129,7 +142,7 @@ body {
   border-radius: var(--radius-xl, 0.75rem);
   padding: 12px 14px;
   color: var(--cm-muted);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
 }
 
 .error-banner {
@@ -193,7 +206,7 @@ h4.culprit-group-title {
 }
 
 :is(.cw-title, .plan-title) {
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--cm-text-title);
   font-weight: var(--font-weight-medium, 500);
   color: var(--cm-muted);
 }
@@ -260,7 +273,7 @@ h4.culprit-group-title {
 
 .cw-Usage-text {
   font-family: var(--editor-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-muted);
 }
 
@@ -305,7 +318,7 @@ h4.culprit-group-title {
   grid-template-columns: minmax(0, 1fr) auto minmax(44px, auto);
   align-items: center;
   gap: 8px;
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   font-variant-numeric: tabular-nums;
 }
 
@@ -352,7 +365,7 @@ h4.culprit-group-title {
 
 :is(.row-tokens, .row-pct) {
   font-family: var(--editor-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   text-align: right;
   color: var(--cm-muted);
   white-space: nowrap;
@@ -380,13 +393,13 @@ h4.culprit-group-title {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-secondary-fg);
   font-variant-numeric: tabular-nums;
 }
 
 .mcp-server-name {
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -397,7 +410,7 @@ h4.culprit-group-title {
 }
 
 .mcp-server-count {
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-muted);
   flex-shrink: 0;
 }
@@ -440,7 +453,7 @@ h4.culprit-group-title {
 }
 
 .plan-note {
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-muted);
   margin-bottom: 8px;
 }
@@ -480,7 +493,7 @@ h4.culprit-group-title {
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   font-variant-numeric: tabular-nums;
 }
 
@@ -490,7 +503,7 @@ h4.culprit-group-title {
 }
 
 .quota-meta {
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -550,7 +563,7 @@ h4.culprit-group-title {
 }
 
 .credits-sub {
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-muted);
 }
 
@@ -560,7 +573,7 @@ h4.culprit-group-title {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-secondary-fg);
 }
 
@@ -590,7 +603,7 @@ h4.culprit-group-title {
   margin-top: auto;
   padding-top: 10px;
   border-top: 1px solid var(--cm-border);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-muted);
 }
 
@@ -601,7 +614,7 @@ h4.culprit-group-title {
   /* Antigravity's compact select trigger: this fill and padding, and a pill under the new UX. */
   border-radius: var(--nux-radius-pill, 9999px);
   padding: 4px 8px;
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   flex: 1 1 150px;
   min-width: 0;
   max-width: 100%;
@@ -620,7 +633,7 @@ h4.culprit-group-title {
 
 .telemetry-pill {
   font-family: var(--editor-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   font-variant-numeric: tabular-nums;
   color: var(--cm-muted);
   white-space: nowrap;

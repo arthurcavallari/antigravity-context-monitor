@@ -38,9 +38,41 @@
     '--cm-muted',
     '--cm-accent',
   ];
+  const HOST_CHART_PALETTES = {
+    dark: {
+      '--chart-1': '#60a5fa',
+      '--chart-2': '#fbbf24',
+      '--chart-3': '#34d399',
+      '--chart-4': '#c084fc',
+      '--chart-5': '#fb7185',
+      '--chart-6': '#38bdf8',
+    },
+    light: {
+      '--chart-1': '#1d4ed8',
+      '--chart-2': '#b45309',
+      '--chart-3': '#15803d',
+      '--chart-4': '#7e22ce',
+      '--chart-5': '#be123c',
+      '--chart-6': '#0369a1',
+    },
+  };
   let lastThemeSig = '';
   let hasLiveHostTheme = false;
   let toastTimer = 0;
+
+  function syncHostFrameAttr() {
+    try {
+      const root = document?.documentElement;
+      if (!root) return;
+      const framedAux = Boolean(typeof window !== 'undefined' && window.parent && window.parent !== window && !isHangarHost());
+      if (framedAux) {
+        if (root.setAttribute) root.setAttribute('data-host', 'aux');
+        else if (root.dataset) root.dataset.host = 'aux';
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 
   function deriveCmVarsFromEditor(bg, fg, isLight) {
     return {
@@ -66,8 +98,15 @@
       ? theme.cssVariables
       : (!fromServer ? theme : null);
     if (fromServer && hasLiveHostTheme) {
+      const serverMode = theme.themeType === 'light' || theme.mode === 'light' || theme.isDark === false ? 'light' : 'dark';
+      const sameMode = !root.dataset?.theme || root.dataset.theme === serverMode;
       for (const [k, v] of Object.entries(cv || theme.vars)) {
-        if (k.startsWith('--chart-') && typeof v === 'string') root.style.setProperty(k, v);
+        if (typeof v !== 'string') continue;
+        if (k === '--app-font-scale' || k === '--font-size') {
+          root.style.setProperty(k, v);
+        } else if (k.startsWith('--chart-') && (sameMode || !/^--chart-[1-6]$/.test(k))) {
+          root.style.setProperty(k, v);
+        }
       }
       return;
     }
@@ -93,6 +132,10 @@
         try {
           window.localStorage?.setItem('cm-theme', root.dataset.theme);
         } catch {}
+        const chartPalette = HOST_CHART_PALETTES[isLight ? 'light' : 'dark'];
+        for (const [k, v] of Object.entries(chartPalette)) {
+          if (!cv[k]) root.style.setProperty(k, v);
+        }
         for (const [k, v] of Object.entries(cv)) {
           if (typeof v === 'string' && !(hasNative && k.startsWith('--agy-'))) {
             root.style.setProperty(k, v);
@@ -567,6 +610,7 @@
     if (opts.autoStart !== false) start();
     return { start, sync, stop, triggerNow, isVisible };
   }
+  syncHostFrameAttr();
   Object.assign(cm, {
     ICONS,
     POLL_FAST_MS,

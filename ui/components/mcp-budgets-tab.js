@@ -101,7 +101,7 @@
             <span class="quota-meta">${esc(skillsB.formattedUsed)} / ${esc(skillsB.formattedLimit)} tokens (${esc(skillsB.formattedPct)})</span>
           </div>
           <div class="quota-track">
-            <div class="quota-fill" style="width:${skillsFillPct}%;background:var(--chart-yellow, #b5a642)"></div>
+            <div class="quota-fill" style="width:${skillsFillPct}%;background:var(--chart-2, var(--chart-yellow, #fbbf24))"></div>
           </div>
         </div>
         <div class="quota-item">
@@ -110,7 +110,7 @@
             <span class="quota-meta">${esc(rulesB.formattedUsed)} / ${esc(rulesB.formattedLimit)} tokens (${esc(rulesB.formattedPct)})</span>
           </div>
           <div class="quota-track">
-            <div class="quota-fill" style="width:${rulesFillPct}%;background:var(--cm-chart-teal, #2ec4b6)"></div>
+            <div class="quota-fill" style="width:${rulesFillPct}%;background:var(--chart-6, var(--cm-chart-teal, #38bdf8))"></div>
           </div>
         </div>
         ${skillInjHtml}

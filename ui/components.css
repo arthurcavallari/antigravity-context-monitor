@@ -19,7 +19,7 @@
   border-radius: var(--nux-radius-pill, var(--agy-radius-pill, 9999px));
   color: var(--secondary-foreground, var(--cm-secondary-fg));
   font-family: var(--vscode-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   line-height: 1rem;
   font-weight: var(--font-weight-medium, 500);
 }
@@ -149,7 +149,7 @@
 
 .perf-val {
   font-family: var(--editor-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   font-weight: var(--font-weight-semibold, 600);
   color: var(--cm-text);
   white-space: nowrap;
@@ -197,14 +197,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .culprit-name {
   font-family: var(--editor-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -213,7 +213,7 @@
 
 .culprit-tokens {
   font-family: var(--editor-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-text);
   font-weight: var(--font-weight-medium, 500);
   flex-shrink: 0;
@@ -233,7 +233,7 @@
 /* Antigravity's disclosures use foreground or secondary text, not accent: the accent measured
    4.24:1 (dark) and 4.47:1 (light) here. The extra block padding lifts the target to 24px. */
 .checkpoint-details summary {
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   padding-block: 4px;
   color: var(--cm-secondary-fg);
   cursor: pointer;
@@ -253,7 +253,7 @@
   background: var(--cm-card);
   border: 1px solid var(--cm-border);
   font-family: var(--editor-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   line-height: 1.4;
   color: var(--cm-muted);
   white-space: pre-wrap;
@@ -340,7 +340,7 @@
 
 .mcp-card-meta {
   font-family: var(--vscode-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-muted);
   font-variant-numeric: tabular-nums;
   /* Paths and addresses have no spaces to break at. */
@@ -365,7 +365,7 @@
 
 .mcp-error-text {
   font-family: var(--vscode-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-red);
   line-height: 1.35;
   margin-top: 6px;
@@ -392,7 +392,7 @@
   border-radius: var(--radius-xl, 0.75rem);
   padding: 12px;
   font-family: var(--editor-font-family);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   line-height: 1.45;
   display: flex;
   flex-direction: column;
@@ -466,6 +466,7 @@
 /* Confirmation dialog, in Antigravity's dialog style: card fill, border, 24px new-UX radius,
    large shadow, a text-sm body, and right-aligned 32px pill buttons. */
 .cm-dialog {
+  margin: auto;
   width: min(360px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   padding: 16px;
@@ -482,7 +483,7 @@
 
 .cm-dialog-title {
   margin: 0 0 8px;
-  font-size: var(--text-sm, 0.875rem);
+  font-size: var(--text-base, calc(0.875rem * var(--app-font-scale, 1)));
   font-weight: var(--font-weight-semibold, 600);
   line-height: 1.4;
 }
@@ -492,7 +493,7 @@
   flex-direction: column;
   gap: 8px;
   margin-bottom: 12px;
-  font-size: var(--text-sm, 0.875rem);
+  font-size: var(--text-compact, calc(0.875rem * var(--app-font-scale, 1) - 0.0625rem));
   line-height: 1.6;
   color: color-mix(in srgb, var(--cm-text) 80%, transparent);
 }
@@ -507,13 +508,13 @@
   padding: 8px 10px;
   border-radius: var(--radius-lg, 0.5rem);
   background: var(--cm-surface);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   overflow-wrap: anywhere;
 }
 
 .cm-dialog-error {
   margin: 0 0 12px;
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-red);
 }
 
@@ -531,7 +532,7 @@
 .cm-dialog-btn {
   height: 32px;
   padding: 0 12px;
-  font-size: var(--text-sm, 0.875rem);
+  font-size: var(--text-base, calc(0.875rem * var(--app-font-scale, 1)));
 }
 
 .cm-dialog-btn[aria-disabled="true"] {
@@ -547,8 +548,14 @@
   bottom: calc(var(--cm-shell-pad-y) + 1px + var(--cm-card-pad-y));
 }
 
+html[data-host='aux'] .agy-toast {
+  left: var(--cm-card-pad-x);
+  right: var(--cm-card-pad-x);
+  bottom: var(--cm-card-pad-y);
+}
+
 .empty-hint {
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   color: var(--cm-muted);
   padding: 4px 0;
 }
@@ -561,7 +568,7 @@
   outline: none;
   background: transparent;
   color: var(--cm-muted);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   font-weight: var(--font-weight-semibold, 600);
   display: inline-flex;
   align-items: center;
@@ -613,7 +620,7 @@
   border-radius: var(--radius-lg, 0.5rem);
   background: var(--cm-surface);
   border: 1px solid var(--cm-border);
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   line-height: 1.45;
   color: var(--cm-muted);
   display: flex;
@@ -655,7 +662,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
 }
 
 .spec-label {
@@ -710,7 +717,7 @@
 }
 
 .fit-prompt {
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
   font-weight: var(--font-weight-semibold, 600);
   color: var(--cm-text);
   overflow: hidden;
@@ -798,7 +805,7 @@
   border-radius: var(--radius-lg, 0.5rem);
   background: color-mix(in srgb, var(--cm-accent) 10%, var(--cm-surface));
   border: 1px solid color-mix(in srgb, var(--cm-accent) 30%, var(--cm-border));
-  font-size: var(--text-xs, 0.75rem);
+  font-size: var(--text-sm, calc(0.75rem * var(--app-font-scale, 1)));
 }
 
 .subagent-banner-nav {

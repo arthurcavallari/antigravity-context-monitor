@@ -112,3 +112,43 @@ test('styles.css scopes native muted text to Onyx and keeps a contrast-safe fall
   assert.match(css, /--cm-muted: var\(--agy-ink-soft,/, 'other presets keep the 88% ink mix');
   assert.match(css, /\[data-theme='light'\] \{[^}]*--cm-blue-ink: color-mix\(in srgb, var\(--color-blue-500, #4380b4\) 70%, var\(--agy-ink\)\)/);
 });
+
+test('2.31.0 typography scale, --app-font-scale, --chart-1..6 live theme switch, and Aux Pane inset shell [CM-13]', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { resolveTelemetryTheme, readHostFontSize } = await import('../lib/context-telemetry.mjs');
+
+  const tmp = mkdtempSync(join(tmpdir(), 'cm13-'));
+  try {
+    const storagePath = join(tmp, 'storage.json');
+    writeFileSync(storagePath, JSON.stringify({ 'jetski.fontSize': 16 }));
+    assert.equal(readHostFontSize(storagePath), 16);
+    const serverTheme = resolveTelemetryTheme({ userSettings: { themeMode: 2 } }, { storagePath });
+    assert.equal(serverTheme.cssVariables['--app-font-scale'], '1.1429');
+    assert.equal(serverTheme.cssVariables['--font-size'], '16px');
+    assert.equal(serverTheme.cssVariables['--chart-1'], '#60a5fa');
+
+    const { applyTheme, props, document } = loadCore({ parent: {}, location: { search: '' } });
+    assert.equal(document.documentElement.dataset.host, 'aux', 'framed native Aux Pane sets data-host=aux');
+    const hangarCore = loadCore({ parent: {}, location: { search: '?host=hangar' } });
+    assert.equal(hangarCore.document.documentElement.dataset.host, undefined, 'Hangar host keeps standalone card chrome');
+
+    // Host theme-change arrives without --app-font-scale or --chart-1..6; Light palette applies immediately,
+    // and subsequent server telemetry still delivers --app-font-scale without clobbering light --chart-1..6.
+    applyTheme({ themeType: 'light', cssVariables: { '--background': '#FFFFFF', '--foreground': '#0A0A0C' } });
+    assert.equal(props.get('--chart-1'), '#1d4ed8');
+    applyTheme(serverTheme);
+    assert.equal(props.get('--app-font-scale'), '1.1429');
+    assert.equal(props.get('--chart-1'), '#1d4ed8', 'stale dark server poll does not clobber live light --chart-1');
+
+    // Switching live theme-change to Dark flips --chart-1..6 immediately while keeping --app-font-scale.
+    applyTheme({ themeType: 'dark', cssVariables: { '--background': '#070708', '--foreground': '#FFFFFF' } });
+    assert.equal(props.get('--chart-1'), '#60a5fa');
+    assert.equal(props.get('--app-font-scale'), '1.1429');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  const componentsCss = readFileSync(join(UI_DIR, 'components.css'), 'utf8');
+  assert.match(componentsCss, /\.cm-dialog \{[^}]*margin: auto;/, 'dialog centers under host * { margin: 0 } reset');
+});
