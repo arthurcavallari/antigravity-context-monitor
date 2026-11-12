@@ -31,6 +31,14 @@ test('isGeminiFamily distinguishes Gemini from Claude and GPT models', () => {
     false
   );
   assert.equal(isGeminiFamily('gpt-oss-120b-medium', '', 'GPT-OSS 120B'), false);
+  assert.equal(
+    isGeminiFamily('o3-high', 'API_PROVIDER_OPENAI_RESPONSES_VERTEX', 'OpenAI o3 (High)'),
+    false
+  );
+  assert.equal(
+    isGeminiFamily('deepseek-r1', 'API_PROVIDER_CUSTOM_OPENAI_COMPAT', 'DeepSeek R1'),
+    false
+  );
 });
 
 test('extractPlanUsage selects matching provider group and computes percentages', () => {
