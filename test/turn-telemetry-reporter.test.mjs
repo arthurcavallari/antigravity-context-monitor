@@ -549,7 +549,7 @@ test('reportSettledTurnTelemetry deduplicates concurrent polls, persists across 
   }
 });
 
-test('extractSettledTurnTelemetryRecords reports antigravity-add-model custom models under one generic identity', () => {
+test('extractSettledTurnTelemetryRecords reports antigravity-add-model custom models by real name, or as `custom` when customNames is off [CM-06r]', () => {
   clearReportedTurnKeys();
   // antigravity-add-model lists a custom model with a slug of the user's own model name and a Gemini provider
   const modelConfigData = {
@@ -596,18 +596,34 @@ test('extractSettledTurnTelemetryRecords reports antigravity-add-model custom mo
   });
   assert.equal(records.length, 2);
   for (const rec of records) {
-    assert.equal(rec.modelId, 'custom');
-    assert.equal(rec.apiProvider, 'API_PROVIDER_CUSTOM');
+    assert.equal(rec.modelId, 'custom-ft-gpt-4o-mini-acme-corp-abc123');
+    assert.equal(rec.apiProvider, 'API_PROVIDER_CUSTOM', 'a custom model on a borrowed first-party provider never lands in Gemini buckets');
+    assert.equal(rec.isCustom, true);
   }
   assert.equal(records[0].effort, 'High');
   assert.equal(records[0].outputTokens, 40);
-  const serialized = JSON.stringify(records).toLowerCase();
+  clearReportedTurnKeys();
+
+  const optedOut = extractSettledTurnTelemetryRecords({
+    cascadeId: 'conv-custom-off',
+    generatorMetadataList: generators,
+    steps,
+    modelConfigData,
+    customNames: false,
+  });
+  assert.equal(optedOut.length, 2);
+  for (const rec of optedOut) {
+    assert.equal(rec.modelId, 'custom');
+    assert.equal(rec.apiProvider, 'API_PROVIDER_CUSTOM');
+    assert.equal(rec.isCustom, true);
+  }
+  const serialized = JSON.stringify(optedOut).toLowerCase();
   assert.ok(!serialized.includes('acme'));
   assert.ok(!serialized.includes('gpt-4o'));
   clearReportedTurnKeys();
 });
 
-test('native 2.31.0 BYOM custom_models without custom- prefix anonymize telemetry, skip calibration, and suppress Google quota active badge [CM-06]', async () => {
+test('native 2.31.0 BYOM custom_models without custom- prefix report real names, skip calibration, and suppress Google quota active badge [CM-06]', async () => {
   clearReportedTurnKeys();
   const { resolveModelMetadata } = await import('../lib/session-resolver.mjs');
   const { extractPlanUsage } = await import('../lib/plan-quota.mjs');
@@ -658,9 +674,87 @@ test('native 2.31.0 BYOM custom_models without custom- prefix anonymize telemetr
   });
   assert.equal(records.length, 2);
   for (const rec of records) {
-    assert.equal(rec.modelId, 'custom');
-    assert.equal(rec.apiProvider, 'API_PROVIDER_CUSTOM');
+    assert.equal(rec.modelId, 'deepseek-r1-corp');
+    assert.equal(rec.apiProvider, 'API_PROVIDER_CUSTOM_OPENAI_COMPAT');
+    assert.equal(rec.isCustom, true);
   }
-  assert.ok(!JSON.stringify(records).toLowerCase().includes('deepseek'));
   clearReportedTurnKeys();
+});
+
+test('custom model names are bounded, never carry URLs or keys, and opt out via HANGAR_TELEMETRY_CUSTOM_NAMES=0 or hangar.json [CM-06r]', async () => {
+  const { sanitizeCustomModelId, resolveCustomModelNamesOptIn, reportSettledTurnTelemetry } = await import('../lib/turn-telemetry-reporter.mjs');
+  assert.equal(sanitizeCustomModelId('deepseek-r1-local'), 'deepseek-r1-local');
+  assert.equal(sanitizeCustomModelId('openrouter/deepseek-r1:free@v2+x'), 'openrouter/deepseek-r1:free@v2+x');
+  assert.equal(sanitizeCustomModelId('https://api.corp.example/v1/model'), 'custom');
+  assert.equal(sanitizeCustomModelId('sk-abcdefghijklmnop1234'), 'custom');
+  assert.equal(sanitizeCustomModelId('x'.repeat(129)), 'custom');
+  assert.equal(sanitizeCustomModelId('Aa0'.repeat(14)), 'custom', '40+ char opaque runs are key-like');
+  assert.equal(sanitizeCustomModelId('name with spaces'), 'custom');
+  assert.equal(sanitizeCustomModelId(''), 'custom');
+
+  const dir = mkdtempSync(join(tmpdir(), 'cm06r-'));
+  try {
+    const installId = '11111111-2222-3333-4444-555555555555';
+    const hangarConfigPath = join(dir, 'hangar.json');
+    writeFileSync(hangarConfigPath, JSON.stringify({ installId, telemetry: true }));
+    assert.equal(resolveCustomModelNamesOptIn({ hangarConfigPath, env: {} }), true, 'default ON');
+    assert.equal(resolveCustomModelNamesOptIn({ hangarConfigPath, env: { HANGAR_TELEMETRY_CUSTOM_NAMES: '0' } }), false);
+    assert.equal(resolveCustomModelNamesOptIn({ hangarConfigPath, env: { HANGAR_TELEMETRY_CUSTOM_NAMES: 'false' } }), false);
+    writeFileSync(hangarConfigPath, JSON.stringify({ installId, customModelNames: false }));
+    assert.equal(resolveCustomModelNamesOptIn({ hangarConfigPath, env: {} }), false, 'hangar.json opt-out');
+    writeFileSync(hangarConfigPath, JSON.stringify({ installId }));
+
+    const steps = [
+      { type: 'CORTEX_STEP_TYPE_USER_INPUT', status: 'CORTEX_STEP_STATUS_DONE', userInput: { userResponse: 'go' } },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'ok' } },
+    ];
+    const generators = [{
+      stepIndices: [1],
+      plannerConfig: { modelName: 'deepseek-r1' },
+      chatModel: {
+        usage: {
+          inputTokens: '100',
+          outputTokens: '10',
+          apiProvider: 'API_PROVIDER_CUSTOM_OPENAI_COMPAT',
+          baseUrl: 'https://llm.corp.example/v1',
+          apiKey: 'sk-secretsecretsecret',
+        },
+      },
+    }];
+    const modelConfigData = {
+      clientModelConfigs: [{ label: 'DeepSeek', modelId: 'deepseek-r1', baseUrl: 'https://llm.corp.example/v1', apiKey: 'sk-secretsecretsecret' }],
+    };
+    const send = async (env, id) => {
+      clearReportedTurnKeys();
+      const bodies = [];
+      await reportSettledTurnTelemetry({
+        cascadeId: id,
+        generatorMetadataList: generators,
+        steps,
+        modelConfigData,
+        options: {
+          hangarConfigPath,
+          telemetryStatePath: join(dir, `state-${id}.json`),
+          env,
+          telemetryFetchFn: async (_url, init) => {
+            bodies.push(init.body);
+            return { ok: true };
+          },
+        },
+      });
+      return bodies.join('');
+    };
+    const on = await send({}, 'conv-on');
+    assert.match(on, /"modelId":"deepseek-r1"/);
+    assert.match(on, /"apiProvider":"API_PROVIDER_CUSTOM_OPENAI_COMPAT"/);
+    assert.match(on, /"isCustom":true/);
+    for (const leak of ['llm.corp.example', 'sk-secret', 'baseUrl', 'apiKey']) assert.ok(!on.includes(leak), leak);
+    const off = await send({ HANGAR_TELEMETRY_CUSTOM_NAMES: '0' }, 'conv-off');
+    assert.match(off, /"modelId":"custom"/);
+    assert.match(off, /"apiProvider":"API_PROVIDER_CUSTOM"/);
+    assert.ok(!off.includes('deepseek'));
+  } finally {
+    clearReportedTurnKeys();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

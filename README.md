@@ -39,7 +39,7 @@ Models added with [antigravity-add-model](https://github.com/vahapogut/antigravi
 - The context bar uses the autocompact ceiling Antigravity reports. The model's own window is set by your provider, so no native window is shown.
 - No plan-usage group is marked **Active**, because these requests don't count against Google's limits.
 - The prompt and effort fit advisor skips these turns. Its thresholds are calibrated on Antigravity's built-in models, and it never recommends a custom model.
-- Turn telemetry reports every custom model as `custom`, so your model names never leave your machine.
+- Turn telemetry (only when Hangar telemetry is on) reports a custom model under its own name, e.g. `deepseek-r1-local`, plus an `isCustom` flag, so it is never counted as Gemini data. Only the model name is sent: never base URLs, API keys or headers, and ids that are longer than 128 characters, outside `[A-Za-z0-9._:/@+-]`, or look like a URL or key are reported as `custom`. To keep your custom model names on your machine, set `HANGAR_TELEMETRY_CUSTOM_NAMES=0` or add `"customModelNames": false` to `~/.gemini/config/hangar.json`; every custom model is then reported as `custom`. `HANGAR_TELEMETRY=0`, `DO_NOT_TRACK=1` and `"telemetry": false` still turn all turn telemetry off.
 
 This is based on reading antigravity-add-model's source. It hasn't been tested live against a running add-model install.
 
