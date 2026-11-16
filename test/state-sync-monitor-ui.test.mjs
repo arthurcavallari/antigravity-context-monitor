@@ -324,3 +324,117 @@ test('CM-AUD-01 & CM-AUD-02: action mutations and direct POST routes enforce tok
     rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
+
+test('Context Monitor closes SSE EventSource when hidden via IntersectionObserver, sidecar-visibility, or visibilitychange so background panes hold zero sockets', async () => {
+  const createdEventSources = [];
+  const observers = [];
+  const winListeners = new Map();
+  const docListeners = new Map();
+  const addL = (m, t, fn) => {
+    const s = m.get(t) || new Set();
+    s.add(fn);
+    m.set(t, s);
+  };
+  const emit = (m, t, ev) => {
+    for (const fn of [...(m.get(t) || [])]) fn(ev);
+  };
+
+  class MockEventSource {
+    constructor(url) {
+      this.url = url;
+      this.closed = false;
+      this.listeners = {};
+      createdEventSources.push(this);
+    }
+    addEventListener(type, fn) {
+      this.listeners[type] = fn;
+    }
+    close() {
+      this.closed = true;
+    }
+  }
+
+  class MockIntersectionObserver {
+    constructor(cb) {
+      this.cb = cb;
+      observers.push(this);
+    }
+    observe(target) {
+      this.target = target;
+    }
+    disconnect() {}
+  }
+
+  const { document: domDoc, HTMLElement, Element, customElements, CustomEvent } = parseHTML(
+    '<!doctype html><html><body><div id="app"></div></body></html>'
+  );
+  const parentWin = {};
+  const document = {
+    readyState: 'complete',
+    hidden: false,
+    getElementById: (id) => domDoc.getElementById(id),
+    createElement: (tag) => domDoc.createElement(tag),
+    querySelector: (sel) => domDoc.querySelector(sel),
+    querySelectorAll: (sel) => domDoc.querySelectorAll(sel),
+    addEventListener: (t, fn) => addL(docListeners, t, fn),
+    removeEventListener: (t, fn) => docListeners.get(t)?.delete(fn),
+    documentElement: {
+      dataset: {},
+      style: { setProperty() {}, getPropertyValue: () => '', removeProperty() {} },
+    },
+  };
+  const window = {
+    parent: parentWin,
+    location: { search: '?conversationId=c1', href: 'http://127.0.0.1:52320/?conversationId=c1' },
+    EventSource: MockEventSource,
+    addEventListener: (t, fn) => addL(winListeners, t, fn),
+    removeEventListener: (t, fn) => winListeners.get(t)?.delete(fn),
+    fetch: async () => ({ ok: true, json: async () => ({ ok: true }) }),
+  };
+  const ctx = vm.createContext({
+    window,
+    document,
+    HTMLElement,
+    Element,
+    customElements,
+    CustomEvent,
+    EventSource: MockEventSource,
+    IntersectionObserver: MockIntersectionObserver,
+    URL,
+    URLSearchParams,
+    fetch: window.fetch,
+    setTimeout: () => 1,
+    clearTimeout() {},
+  });
+
+  const agyShellRes = await app.pages.get('/shell.js')();
+  vm.runInContext(agyShellRes.body, ctx, { filename: 'shell.js' });
+  for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+  window.ContextMonitor.apiCall = async () => ({ isExecuting: false, session: { cascadeId: 'c1' }, context: { totalUsedTokens: 1 } });
+  vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+
+  assert.equal(createdEventSources.length, 1);
+  assert.equal(createdEventSources[0].closed, false);
+
+  // Hidden via Hangar child-iframe postMessage -> closes EventSource
+  emit(winListeners, 'message', { source: parentWin, data: { type: 'sidecar-visibility', payload: { visible: false } } });
+  assert.equal(createdEventSources[0].closed, true);
+
+  // Shown again -> reconnects
+  emit(winListeners, 'message', { source: parentWin, data: { type: 'sidecar-visibility', payload: { visible: true } } });
+  assert.equal(createdEventSources.length, 2);
+  assert.equal(createdEventSources[1].closed, false);
+
+  // Hidden via CSS layout (IntersectionObserver) -> closes EventSource
+  for (const o of observers) o.cb([{ isIntersecting: false }]);
+  assert.equal(createdEventSources[1].closed, true);
+
+  for (const o of observers) o.cb([{ isIntersecting: true }]);
+  assert.equal(createdEventSources.length, 3);
+  assert.equal(createdEventSources[2].closed, false);
+
+  // Hidden via document.hidden -> closes EventSource
+  document.hidden = true;
+  emit(docListeners, 'visibilitychange');
+  assert.equal(createdEventSources[2].closed, true);
+});
