@@ -740,6 +740,17 @@ test('extractPluginDir and normalizeSidecars support versioned plugin directorie
           },
           tools: [],
         },
+        {
+          status: 'MCP_SERVER_STATUS_READY',
+          spec: {
+            serverName: 'ws-plug_api',
+            originalServerName: 'api',
+            pluginName: 'WsPlug',
+            pluginRoot: 'file:///C:/work/plugins/.gemini/plugins/ws-plug@0.9.0',
+            configPath: 'file:///C:/work/plugins/.gemini/plugins/ws-plug@0.9.0/mcp_config.json',
+          },
+          tools: [],
+        },
       ],
     },
     {},
@@ -749,6 +760,7 @@ test('extractPluginDir and normalizeSidecars support versioned plugin directorie
   const byName = Object.fromEntries(catalog.servers.map((s) => [s.serverName, s]));
   assert.equal(byName.mcp.pluginDir, 'figma@1.2.0+build1');
   assert.equal(byName.stripe.pluginDir, 'stripe');
+  assert.equal(byName.api.pluginDir, 'ws-plug@0.9.0');
 
   const sidecars = normalizeSidecars({
     sidecars: [
