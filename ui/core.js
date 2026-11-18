@@ -317,7 +317,7 @@
   // same control again. Controls without an id are keyed by their tag, stable classes and data attributes.
   const FOCUS_KEY_ATTRS = ['data-subagent-id', 'data-server', 'data-terminal-id', 'data-sidecar-id', 'data-plugin-id', 'data-action', 'data-tab'];
   const STATE_CLASSES = new Set(['active', 'active-subagent', 'open', 'on', 'spinning', 'disabled', 'strike']);
-  const SAFE_NAV_SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
+  const SAFE_NAV_SEGMENT_RE = /^[a-zA-Z0-9._@+-]+$/;
   function isSafeNavId(raw) {
     if (typeof raw !== 'string') return false;
     const trimmed = raw.trim();

@@ -714,4 +714,88 @@ test('restartSidecarById tolerates benign LS "project name already exists" error
   }
 });
 
+test('extractPluginDir and normalizeSidecars support versioned plugin directories (@semver and nested <slug>/<ver>)', () => {
+  const catalog = buildMcpAndCustomizationsCatalog(
+    {
+      states: [
+        {
+          status: 'MCP_SERVER_STATUS_READY',
+          spec: {
+            serverName: 'figma_mcp',
+            originalServerName: 'mcp',
+            pluginName: 'Figma',
+            pluginRoot: '/Users/x/.gemini/config/plugins/figma@1.2.0+build1',
+            configPath: '/Users/x/.gemini/config/plugins/figma@1.2.0+build1/mcp_config.json',
+          },
+          tools: [],
+        },
+        {
+          status: 'MCP_SERVER_STATUS_READY',
+          spec: {
+            serverName: 'stripe_stripe',
+            originalServerName: 'stripe',
+            pluginName: 'Stripe',
+            pluginRoot: 'file:///C:/Users/x/.gemini/config/plugins/stripe/2.4.1',
+            configPath: 'file:///C:/Users/x/.gemini/config/plugins/stripe/2.4.1/.mcp.json',
+          },
+          tools: [],
+        },
+        {
+          status: 'MCP_SERVER_STATUS_READY',
+          spec: {
+            serverName: 'ws-plug_api',
+            originalServerName: 'api',
+            pluginName: 'WsPlug',
+            pluginRoot: 'file:///C:/work/plugins/.gemini/plugins/ws-plug@0.9.0',
+            configPath: 'file:///C:/work/plugins/.gemini/plugins/ws-plug@0.9.0/mcp_config.json',
+          },
+          tools: [],
+        },
+      ],
+    },
+    {},
+    0.28,
+    { appDataDir: '' }
+  );
+  const byName = Object.fromEntries(catalog.servers.map((s) => [s.serverName, s]));
+  assert.equal(byName.mcp.pluginDir, 'figma@1.2.0+build1');
+  assert.equal(byName.stripe.pluginDir, 'stripe');
+  assert.equal(byName.api.pluginDir, 'ws-plug@0.9.0');
+
+  const sidecars = normalizeSidecars({
+    sidecars: [
+      {
+        sidecarId: 'figma/viewer',
+        pluginPath: 'file:///C:/Users/x/.gemini/config/plugins/figma@1.2.0+build1/sidecars/viewer',
+        status: 'SIDECAR_STATUS_RUNNING',
+      },
+      {
+        sidecarId: 'science--viewer',
+        pluginPath: 'file:///C:/Users/x/.gemini/config/plugins/science/1.3.0/sidecars/viewer',
+        status: 'SIDECAR_STATUS_RUNNING',
+      },
+    ],
+  });
+  assert.equal(sidecars[0].pluginDir, 'figma@1.2.0+build1');
+  assert.equal(sidecars[1].pluginDir, 'science');
+
+  const here = dirname(fileURLToPath(import.meta.url));
+  const cmUiDir = join(here, '..', 'ui');
+  const posted = [];
+  const ctx = vm.createContext({
+    window: { parent: { postMessage: (msg) => posted.push(msg) } },
+  });
+  for (const rel of ['core.js', 'components/diagnostics-tab.js']) {
+    vm.runInContext(readFileSync(join(cmUiDir, rel), 'utf8'), ctx, { filename: rel });
+  }
+  const navRes = ctx.window.ContextMonitor.navigateToHangarPlugin('figma@1.2.0+build1', {
+    targetTab: 'sidecars',
+    sidecarId: 'figma@1.2.0+build1/viewer',
+  });
+  assert.equal(navRes.ok, true);
+  assert.equal(posted[0].pluginId, 'figma@1.2.0+build1');
+  assert.equal(posted[0].targetId, 'figma@1.2.0+build1/viewer');
+});
+
+
 
