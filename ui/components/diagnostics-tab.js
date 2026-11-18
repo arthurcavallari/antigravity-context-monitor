@@ -5,7 +5,7 @@
   const LEVEL_PREFIX = { error: 'Error: ', warn: 'Warning: ' };
   const MAX_LIVE_LOG_LINES = 80;
   const MAX_PAUSED_LOG_LINES = 300;
-  const SAFE_ID_RE = /^[a-zA-Z0-9._-]+$/;
+  const SAFE_ID_RE = /^[a-zA-Z0-9._@+-]+$/;
   const LOOPBACK_ORIGIN_RE = /^(?:https?:\/\/)(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
   const isSafePluginId = (id) => (
     typeof id === 'string' && SAFE_ID_RE.test(id) && !id.includes('..') && id !== '.'
