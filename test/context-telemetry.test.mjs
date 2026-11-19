@@ -1575,6 +1575,13 @@ test('hydrateSwarmSummaries reads 2.33.0 plan.json tasks/threads and distinguish
     assert.equal(auth.trajectoryMetadata.swarmThreadTitle, 'Core Engine');
     assert.equal(rev.annotations.title, '@reviewer — Audit edge cases');
     assert.equal(rev.trajectoryMetadata.swarmStatusBadge, 'Done');
+
+    const tree = collectSubagentTree(hydrated, coordId, coordId, {});
+    const treeById = Object.fromEntries(tree.items.map((x) => [x.cascadeId, x]));
+    assert.equal(treeById['w-auth'].swarmThreadTitle, 'Core Engine');
+    assert.equal(treeById['w-auth'].statusBadge, 'In Review');
+    assert.equal(treeById['w-rev'].swarmThreadTitle, 'Core Engine');
+    assert.equal(treeById['w-rev'].statusBadge, 'Done');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

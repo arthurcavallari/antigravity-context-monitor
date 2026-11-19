@@ -9,9 +9,11 @@
         ? 'Running'
         : (sa.isError ? 'Error' : 'Done')
     );
-    const cls = rawStatus === 'Running'
-      ? 'active'
-      : (rawStatus === 'Error' ? 'error' : (rawStatus === 'Stopped' ? 'off' : 'ready'));
+    let cls = 'ready';
+    if (rawStatus === 'Running') cls = 'active';
+    else if (rawStatus === 'Error') cls = 'error';
+    else if (rawStatus === 'In Review') cls = 'warn';
+    else if (rawStatus === 'Stopped' || rawStatus === 'Waiting') cls = 'off';
     return html`<span class="agy-badge ${cls}"><span class="agy-badge-dot"></span>${esc(rawStatus)}</span>`;
   }
 
@@ -84,6 +86,7 @@
         </div>
         <div class="fit-flow">
           <span class="fit-pill">${esc(sa.modelBadge || 'Gemini')}</span>
+          ${sa.swarmThreadTitle ? html`<span class="fit-pill" title="Swarm workstream thread">${esc(sa.swarmThreadTitle)}</span>` : ''}
           <span>${esc(sa.stepCount ?? 0)} step${Number(sa.stepCount) === 1 ? '' : 's'}</span>
           ${sa.durationFormatted && sa.durationFormatted !== '—' ? html`<span>· ${esc(sa.durationFormatted)}</span>` : ''}
           ${sa.formattedParentContextTokens ? html`<span>· ${esc(sa.formattedParentContextTokens)} in parent</span>` : ''}
