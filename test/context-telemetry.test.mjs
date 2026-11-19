@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -18,6 +18,7 @@ import {
   clearConversationDetails,
   computeContextTelemetry,
   fetchFullTelemetry,
+  hydrateSwarmSummaries,
 } from '../lib/context-telemetry.mjs';
 import { clearRpcCache } from '../lib/rpc-cache.mjs';
 import { setAiCreditsOverageSetting } from '../lib/plan-quota.mjs';
@@ -1524,6 +1525,57 @@ test('fetchFullTelemetry hydrates native 2.31+ swarm members.json/board.jsonl an
   } finally {
     clearConversationDetails();
     clearRpcCache();
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('hydrateSwarmSummaries reads 2.33.0 plan.json tasks/threads and distinguishes [done] vs In Review', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'cm-swarm-233-'));
+  const coordId = 'c2330000-0000-4000-8000-000000000001';
+  const swarmDir = join(tmp, 'brain', coordId, '.system_generated', 'swarm');
+  mkdirSync(swarmDir, { recursive: true });
+  writeFileSync(join(swarmDir, 'swarm.json'), JSON.stringify({ created_at: '2026-11-19T10:00:00Z' }));
+  writeFileSync(
+    join(swarmDir, 'plan.json'),
+    JSON.stringify({
+      goal: { title: 'Ship 2.33.0 updates' },
+      tasks: {
+        author: 'Implement parser changes',
+        reviewer: 'Audit edge cases',
+      },
+      threads: [{ title: 'Core Engine', workers: ['author', 'reviewer'] }],
+    })
+  );
+  writeFileSync(
+    join(swarmDir, 'members.json'),
+    JSON.stringify({
+      members: {
+        coordinator: { conversation_id: coordId, role: 'coordinator', phase: 'RUNNING', model: 'Orchestrator (Neon)' },
+        author: { conversation_id: 'w-auth', role: 'worker', phase: 'RUNNING', wake_mode: 'mentions', model: 'Gemini 4 Neon (High)' },
+        reviewer: { conversation_id: 'w-rev', role: 'worker', phase: 'RUNNING', wake_mode: 'mentions', model: 'Gemini 4 Hydrogen (Medium)' },
+      },
+    })
+  );
+  writeFileSync(
+    join(swarmDir, 'board.jsonl'),
+    [
+      JSON.stringify({ seq: 1, agent: 'author', text: '@coordinator Draft PR ready for check', time: '2026-11-19 10:05:00' }),
+      JSON.stringify({ seq: 2, agent: 'reviewer', text: '@coordinator [done] Verified zero regressions', time: '2026-11-19 10:06:00' }),
+    ].join('\n') + '\n'
+  );
+  try {
+    const hydrated = hydrateSwarmSummaries(
+      { trajectorySummaries: { [coordId]: { status: 'CASCADE_RUN_STATUS_RUNNING' } } },
+      { appDataDir: tmp }
+    );
+    const auth = hydrated.trajectorySummaries['w-auth'];
+    const rev = hydrated.trajectorySummaries['w-rev'];
+    assert.equal(auth.annotations.title, '@author — Implement parser changes');
+    assert.equal(auth.trajectoryMetadata.swarmStatusBadge, 'In Review');
+    assert.equal(auth.trajectoryMetadata.swarmThreadTitle, 'Core Engine');
+    assert.equal(rev.annotations.title, '@reviewer — Audit edge cases');
+    assert.equal(rev.trajectoryMetadata.swarmStatusBadge, 'Done');
+  } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
 });

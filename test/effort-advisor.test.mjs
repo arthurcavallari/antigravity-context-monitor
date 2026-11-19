@@ -813,3 +813,44 @@ test('Gemini 4 Carbon (M427/M437/M438) is recognized as flagship over Argon and 
   assert.equal(fit.evaluatedTurns[1].status, 'thrashing');
   assert.equal(fit.evaluatedTurns[1].recommendedModel, '4 Carbon (High)');
 });
+
+test('Gemini 4 Neon (M532..M535), Hydrogen (M525..M528), and Orchestrator (M537/M667/M681) classify accurately in 2.33.0', async () => {
+  const { resolveModelMetadata } = await import('../lib/session-resolver.mjs');
+  const coldNeon = resolveModelMetadata({}, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M535' } });
+  const coldHyd = resolveModelMetadata({}, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M526' } });
+  const coldOrch = resolveModelMetadata({}, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M537' } });
+
+  assert.equal(coldNeon.badgeLabel, 'Gemini 4 Neon (XHigh)');
+  assert.equal(coldNeon.thinkingEffort, 'XHigh');
+  assert.equal(coldNeon.nativeCeiling, 1_048_576);
+  assert.equal(coldHyd.badgeLabel, 'Gemini 4 Hydrogen (Medium)');
+  assert.equal(coldHyd.thinkingEffort, 'Medium');
+  assert.equal(coldOrch.badgeLabel, 'Orchestrator (Neon)');
+
+  const catalog233 = {
+    clientModelConfigs: [
+      { label: 'Gemini 4 Neon (High)', modelId: 'gemini-4-neon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M532' } },
+      { label: 'Gemini 4 Neon (Low)', modelId: 'gemini-4-neon-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M534' } },
+      { label: 'Gemini 4 Carbon (High)', modelId: 'gemini-4-carbon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M427' } },
+      { label: 'Gemini 4 Hydrogen (Low)', modelId: 'gemini-4-hydrogen-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M527' } },
+      { label: 'Orchestrator (Neon)', modelId: 'gemini-pro-orchestrator-neon', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M537' } },
+      ...MOCK_MODEL_CONFIG.clientModelConfigs,
+    ],
+  };
+  const steps = [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'git status', userConfig: { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M534' } } } },
+    { type: 'CORTEX_STEP_TYPE_RUN_COMMAND', runCommand: { commandLine: 'git status', exitCode: 0 } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Clean.' } },
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'fix parser', userConfig: { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M527' } } } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Retrying.' } },
+  ];
+  const gens = [
+    { stepIndices: [1, 2], chatModel: { model: 'MODEL_PLACEHOLDER_M534', usage: { inputTokens: 12000, outputTokens: 100, thinkingOutputTokens: 20 } } },
+    { stepIndices: [4], chatModel: { model: 'MODEL_PLACEHOLDER_M527', retryInfos: [{ retryReason: 'RETRY_REASON_MODEL_CORRECTABLE' }], usage: { inputTokens: 18000, outputTokens: 400, thinkingOutputTokens: 180 } } },
+  ];
+  const fit = analyzeModelAndEffortFit(gens, steps, catalog233);
+  assert.equal(fit.evaluatedTurns[0].status, 'housekeeping');
+  assert.equal(fit.evaluatedTurns[0].recommendedModel, '4 Hydrogen (Low)');
+  assert.equal(fit.evaluatedTurns[1].status, 'thrashing');
+  assert.equal(fit.evaluatedTurns[1].recommendedModel, '4 Neon (Med)');
+});
