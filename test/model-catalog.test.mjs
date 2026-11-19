@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fetchFullTelemetry, clearConversationDetails } from '../lib/context-telemetry.mjs';
 import { clearRpcCache, lsRpcCache } from '../lib/rpc-cache.mjs';
-import { clearModelCatalogState } from '../lib/model-catalog.mjs';
+import {
+  clearModelCatalogState,
+  extractThinkingEffort,
+  stripModelFamilySlug,
+  stripModelSuffixAndVendor,
+} from '../lib/model-catalog.mjs';
 import { clearReportedTurnKeys, reportSettledTurnTelemetry } from '../lib/turn-telemetry-reporter.mjs';
 
 const VALID_UUID = '12345678-1234-4234-8234-1234567890ab';
@@ -481,4 +486,10 @@ test('model-catalog-cache.json persists compact catalog across cold LS restarts,
     clearReportedTurnKeys();
     rmSync(dir, { recursive: true, force: true });
   }
+
+  const t0 = performance.now();
+  assert.equal(extractThinkingEffort(`${' '.repeat(50_000)}(Nope)`, 'x'), '');
+  assert.equal(stripModelSuffixAndVendor(`Gemini ${' '.repeat(50_000)}(Nope)`), '(Nope)');
+  assert.equal(stripModelFamilySlug(`gemini${'-tiered-'.repeat(10_000)}x`), 'gemini');
+  assert.ok(performance.now() - t0 < 200);
 });
