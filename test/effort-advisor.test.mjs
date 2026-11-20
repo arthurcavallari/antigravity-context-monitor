@@ -813,3 +813,133 @@ test('Gemini 4 Carbon (M427/M437/M438) is recognized as flagship over Argon and 
   assert.equal(fit.evaluatedTurns[1].status, 'thrashing');
   assert.equal(fit.evaluatedTurns[1].recommendedModel, '4 Carbon (High)');
 });
+
+test('Gemini 4 Neon (M532..M535), Hydrogen (M525..M528), and Orchestrator (M537/M667/M681) classify accurately in 2.33.0', async () => {
+  const { resolveModelMetadata } = await import('../lib/session-resolver.mjs');
+  const coldNeon = resolveModelMetadata({}, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M535' } });
+  const coldHyd = resolveModelMetadata({}, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M526' } });
+  const coldOrch = resolveModelMetadata({}, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M537' } });
+
+  assert.equal(coldNeon.badgeLabel, 'Gemini 4 Neon (XHigh)');
+  assert.equal(coldNeon.thinkingEffort, 'XHigh');
+  assert.equal(coldNeon.nativeCeiling, 1_048_576);
+  assert.equal(coldHyd.badgeLabel, 'Gemini 4 Hydrogen (Medium)');
+  assert.equal(coldHyd.thinkingEffort, 'Medium');
+  assert.equal(coldOrch.badgeLabel, 'Orchestrator (Neon)');
+
+  const catalog233 = {
+    clientModelConfigs: [
+      { label: 'Gemini 4 Neon (High)', modelId: 'gemini-4-neon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M532' } },
+      { label: 'Gemini 4 Neon (Low)', modelId: 'gemini-4-neon-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M534' } },
+      { label: 'Gemini 4 Carbon (High)', modelId: 'gemini-4-carbon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M427' } },
+      { label: 'Gemini 4 Hydrogen (Low)', modelId: 'gemini-4-hydrogen-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M527' } },
+      { label: 'Orchestrator (Neon)', modelId: 'gemini-pro-orchestrator-neon', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M537' } },
+      ...MOCK_MODEL_CONFIG.clientModelConfigs,
+    ],
+  };
+  const steps = [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'git status', userConfig: { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M534' } } } },
+    { type: 'CORTEX_STEP_TYPE_RUN_COMMAND', runCommand: { commandLine: 'git status', exitCode: 0 } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Clean.' } },
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'fix parser', userConfig: { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M527' } } } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Retrying.' } },
+  ];
+  const gens = [
+    { stepIndices: [1, 2], chatModel: { model: 'MODEL_PLACEHOLDER_M534', usage: { inputTokens: 12000, outputTokens: 100, thinkingOutputTokens: 20 } } },
+    { stepIndices: [4], chatModel: { model: 'MODEL_PLACEHOLDER_M527', retryInfos: [{ retryReason: 'RETRY_REASON_MODEL_CORRECTABLE' }], usage: { inputTokens: 18000, outputTokens: 400, thinkingOutputTokens: 180 } } },
+  ];
+  const fit = analyzeModelAndEffortFit(gens, steps, catalog233);
+  assert.equal(fit.evaluatedTurns[0].status, 'housekeeping');
+  assert.equal(fit.evaluatedTurns[0].recommendedModel, '4 Hydrogen (Low)');
+  assert.equal(fit.evaluatedTurns[1].status, 'thrashing');
+  assert.equal(fit.evaluatedTurns[1].recommendedModel, '4 Neon (Med)');
+});
+
+test('warm XHigh, Max, and Orchestrator models extract effort, format short labels cleanly, and classify unused_effort/loop_tax without false thrashing', async () => {
+  const { cleanModelBadgeLabel, extractThinkingEffort, resolveModelMetadata } = await import('../lib/session-resolver.mjs');
+  assert.equal(extractThinkingEffort('Gemini 4 Neon (XHigh)', 'gemini-4-neon-xhigh'), 'XHigh');
+  assert.equal(extractThinkingEffort('', 'gemini-4-hydrogen-xhigh'), 'XHigh');
+  assert.equal(extractThinkingEffort('Claude Opus 5.5 (Max)', 'claude-opus-5-5-max'), 'Max');
+  assert.equal(extractThinkingEffort('Orchestrator (Neon)', 'gemini-pro-orchestrator-neon'), 'High');
+  assert.equal(cleanModelBadgeLabel('', 'gemini-4-neon-xhigh'), 'Gemini 4 Neon (XHigh)');
+  assert.equal(cleanModelBadgeLabel('', 'gemini-pro-orchestrator-neon'), 'Gemini Pro Orchestrator Neon');
+
+  // Use non-fallback enum IDs so STATIC_MODEL_FALLBACKS cannot mask warm catalog behavior
+  const warmCatalog = {
+    clientModelConfigs: [
+      { label: 'Gemini 4 Neon (XHigh)', modelId: 'gemini-4-neon-xhigh', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M901' } },
+      { label: 'Gemini 4 Neon (High)', modelId: 'gemini-4-neon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M902' } },
+      { label: 'Gemini 4 Hydrogen (XHigh)', modelId: 'gemini-4-hydrogen-xhigh', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M903' } },
+      { label: 'Gemini 4 Hydrogen (Low)', modelId: 'gemini-4-hydrogen-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M904' } },
+      { label: 'Orchestrator (Neon)', modelId: 'gemini-pro-orchestrator-neon', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M905' } },
+    ],
+  };
+
+  const warmNeonMeta = resolveModelMetadata(warmCatalog, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M901' } });
+  assert.equal(warmNeonMeta.thinkingEffort, 'XHigh');
+  const warmOrchMeta = resolveModelMetadata(warmCatalog, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M905' } });
+  assert.equal(warmOrchMeta.thinkingEffort, 'High');
+
+  // 1. Warm XHigh turn with 40 thinking tokens -> unused_effort, shortModelLabel '4 Neon (XHigh)' (never doubled)
+  const unusedRes = analyzeModelAndEffortFit(
+    [{ stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M901', timeToFirstToken: '4.0s', usage: { inputTokens: 15000, outputTokens: 120, thinkingOutputTokens: 40 } } }],
+    [
+      { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'ok' } },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Done.' } },
+    ],
+    warmCatalog
+  );
+  assert.equal(unusedRes.latestTurnFit.effort, 'XHigh');
+  assert.equal(unusedRes.latestTurnFit.shortModelLabel, '4 Neon (XHigh)');
+  assert.equal(unusedRes.latestTurnFit.status, 'unused_effort');
+  assert.equal(unusedRes.latestTurnFit.recommendedModel, '4 Hydrogen (Low)');
+
+  // 2. Warm XHigh turn with loop_tax -> steps down one tier to '4 Neon (High)'
+  const loopRes = analyzeModelAndEffortFit(
+    [
+      { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M901', timeToFirstToken: '2.0s', usage: { inputTokens: 20000, outputTokens: 100, thinkingOutputTokens: 150 } } },
+      { stepIndices: [2], chatModel: { model: 'MODEL_PLACEHOLDER_M901', timeToFirstToken: '5.2s', usage: { inputTokens: 22000, outputTokens: 100, thinkingOutputTokens: 650 } } },
+      { stepIndices: [3], chatModel: { model: 'MODEL_PLACEHOLDER_M901', timeToFirstToken: '4.8s', usage: { inputTokens: 24000, outputTokens: 100, thinkingOutputTokens: 600 } } },
+      { stepIndices: [4], chatModel: { model: 'MODEL_PLACEHOLDER_M901', timeToFirstToken: '2.2s', usage: { inputTokens: 26000, outputTokens: 250, thinkingOutputTokens: 200 } } },
+    ],
+    [
+      { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'inspect modules' } },
+      { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+      { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+      { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' },
+    ],
+    warmCatalog
+  );
+  assert.equal(loopRes.latestTurnFit.status, 'loop_tax');
+  assert.equal(loopRes.latestTurnFit.recommendedModel, '4 Neon (High)');
+
+  // 3. Warm XHigh turn with edit -> failed test -> fix edit (0 modelCorrectableRetries) is NOT !isHigh thrashing
+  const editFixRes = analyzeModelAndEffortFit(
+    [
+      { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M901', timeToFirstToken: '4.0s', usage: { inputTokens: 25000, outputTokens: 300, thinkingOutputTokens: 900 } } },
+      { stepIndices: [2], chatModel: { model: 'MODEL_PLACEHOLDER_M901', timeToFirstToken: '2.0s', usage: { inputTokens: 26000, outputTokens: 100, thinkingOutputTokens: 400 } } },
+      { stepIndices: [3], chatModel: { model: 'MODEL_PLACEHOLDER_M901', timeToFirstToken: '4.0s', usage: { inputTokens: 28000, outputTokens: 300, thinkingOutputTokens: 900 } } },
+    ],
+    [
+      { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'implement TDD fix' } },
+      { type: 'CORTEX_STEP_TYPE_REPLACE_FILE_CONTENT', replaceFileContent: { targetFile: 'src/app.mjs' } },
+      { type: 'CORTEX_STEP_TYPE_RUN_COMMAND', runCommand: { exitCode: 1 } },
+      { type: 'CORTEX_STEP_TYPE_REPLACE_FILE_CONTENT', replaceFileContent: { targetFile: 'src/app.mjs' } },
+    ],
+    warmCatalog
+  );
+  assert.equal(editFixRes.latestTurnFit.status, 'optimal');
+
+  // 4. Warm Orchestrator (Neon) formats shortModelLabel without duplicating effort
+  const orchRes = analyzeModelAndEffortFit(
+    [{ stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M905', timeToFirstToken: '5.0s', usage: { inputTokens: 20000, outputTokens: 300, thinkingOutputTokens: 1200 } } }],
+    [
+      { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'coordinate swarm' } },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Dispatched.' } },
+    ],
+    warmCatalog
+  );
+  assert.equal(orchRes.latestTurnFit.effort, 'High');
+  assert.equal(orchRes.latestTurnFit.shortModelLabel, 'Orchestrator (Neon)');
+});

@@ -273,3 +273,47 @@ test('custom models get a neutral badge, no Gemini window claims, and a plan-usa
   assert.ok(builtIn.includes('context-help-btn'));
   assert.ok(builtIn.includes('class="model-badge clickable"'));
 });
+
+test('renderSubagentsDrawer renders swarmThreadTitle pill and distinct warn/off badge classes for In Review and Waiting', () => {
+  const html = ui.renderSubagentsDrawer(
+    {
+      totalCount: 3,
+      runningCount: 0,
+      totalSteps: 9,
+      items: [
+        {
+          cascadeId: 'w-auth',
+          nestingDepth: 1,
+          title: '@author — Implement parser',
+          modelBadge: 'Gemini 4 Neon (XHigh)',
+          swarmThreadTitle: 'Core Engine',
+          statusBadge: 'In Review',
+          stepCount: 5,
+        },
+        {
+          cascadeId: 'w-wait',
+          nestingDepth: 1,
+          title: '@verifier',
+          modelBadge: 'Gemini 4 Hydrogen (Medium)',
+          statusBadge: 'Waiting',
+          stepCount: 0,
+        },
+        {
+          cascadeId: 'w-done',
+          nestingDepth: 1,
+          title: '@docs',
+          modelBadge: 'Gemini 4 Hydrogen (Low)',
+          statusBadge: 'Done',
+          stepCount: 4,
+        },
+      ],
+    },
+    true,
+    'coord-1',
+    true
+  );
+  assert.match(html, /class="fit-pill"[^>]*>Core Engine<\/span>/);
+  assert.match(html, /class="agy-badge warn"><span class="agy-badge-dot"><\/span>In Review<\/span>/);
+  assert.match(html, /class="agy-badge off"><span class="agy-badge-dot"><\/span>Waiting<\/span>/);
+  assert.match(html, /class="agy-badge ready"><span class="agy-badge-dot"><\/span>Done<\/span>/);
+});
