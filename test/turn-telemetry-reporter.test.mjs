@@ -759,12 +759,13 @@ test('custom model names are bounded, never carry URLs or keys, and opt out via 
   }
 });
 
-test('extractSettledTurnTelemetryRecords preserves XHigh and Orchestrator High effort on warm 2.33.0 turns', () => {
+test('extractSettledTurnTelemetryRecords preserves XHigh (including Orchestrator Neon) and Orchestrator Carbon High effort on warm turns', () => {
   clearReportedTurnKeys();
   const warmCatalog = {
     clientModelConfigs: [
       { label: 'Gemini 4 Neon (XHigh)', modelId: 'gemini-4-neon-xhigh', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M901' } },
       { label: 'Orchestrator (Neon)', modelId: 'gemini-pro-orchestrator-neon', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M905' } },
+      { label: 'Orchestrator (Carbon)', modelId: 'gemini-pro-orchestrator', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M906' } },
     ],
   };
   const steps = [
@@ -772,6 +773,8 @@ test('extractSettledTurnTelemetryRecords preserves XHigh and Orchestrator High e
     { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'ok' } },
     { type: 'CORTEX_STEP_TYPE_USER_INPUT', status: 'CORTEX_STEP_STATUS_DONE' },
     { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'coordinated' } },
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', status: 'CORTEX_STEP_STATUS_DONE' },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'carbon coordinated' } },
   ];
   const generators = [
     {
@@ -788,6 +791,13 @@ test('extractSettledTurnTelemetryRecords preserves XHigh and Orchestrator High e
         usage: { inputTokens: '14000', outputTokens: '220', thinkingOutputTokens: '800', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
       },
     },
+    {
+      stepIndices: [5],
+      chatModel: {
+        model: 'MODEL_PLACEHOLDER_M906',
+        usage: { inputTokens: '15000', outputTokens: '220', thinkingOutputTokens: '800', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
+      },
+    },
   ];
   try {
     const records = extractSettledTurnTelemetryRecords({
@@ -797,11 +807,13 @@ test('extractSettledTurnTelemetryRecords preserves XHigh and Orchestrator High e
       modelConfigData: warmCatalog,
     });
     const turnRecords = records.filter((r) => r.phase === 'turn');
-    assert.equal(turnRecords.length, 2);
+    assert.equal(turnRecords.length, 3);
     assert.equal(turnRecords[0].modelId, 'gemini-4-neon-xhigh');
     assert.equal(turnRecords[0].effort, 'XHigh');
     assert.equal(turnRecords[1].modelId, 'gemini-pro-orchestrator-neon');
-    assert.equal(turnRecords[1].effort, 'High');
+    assert.equal(turnRecords[1].effort, 'XHigh');
+    assert.equal(turnRecords[2].modelId, 'gemini-pro-orchestrator');
+    assert.equal(turnRecords[2].effort, 'High');
   } finally {
     clearReportedTurnKeys();
   }

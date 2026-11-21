@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   analyzeModelAndEffortFit,
+  buildModelLookup,
   countInvocationRetries,
   extractInvocationCharMetrics,
   measureInvocationThinking,
   formatThinkingTokens,
+  resolveInvocationModel,
 } from '../lib/effort-advisor.mjs';
 
 const MOCK_MODEL_CONFIG = {
@@ -276,7 +278,16 @@ test('analyzeModelAndEffortFit: flags loop_tax and steps down effort within fami
   const res = analyzeModelAndEffortFit(genMeta, steps, MOCK_MODEL_CONFIG);
   assert.equal(res.latestTurnFit.status, 'loop_tax');
   assert.equal(res.latestTurnFit.badge, 'Lower effort');
-  assert.equal(res.latestTurnFit.recommendedModel, '4 Argon (Med)');
+  assert.equal(res.latestTurnFit.recommendedModel, '4 Argon → 3.8 Flash');
+
+  // Non-flagship loop_tax still steps down effort within family
+  const fastGenMeta = genMeta.map((g) => ({
+    ...g,
+    chatModel: { ...g.chatModel, model: 'MODEL_PLACEHOLDER_M80' },
+  }));
+  const fastRes = analyzeModelAndEffortFit(fastGenMeta, steps, MOCK_MODEL_CONFIG);
+  assert.equal(fastRes.latestTurnFit.status, 'loop_tax');
+  assert.equal(fastRes.latestTurnFit.recommendedModel, '3.8 Flash (Low)');
 });
 
 test('analyzeModelAndEffortFit: flags housekeeping on Flagship and recommends 3.8 Flash (Low)', () => {
@@ -860,7 +871,8 @@ test('warm XHigh, Max, and Orchestrator models extract effort, format short labe
   assert.equal(extractThinkingEffort('Gemini 4 Neon (XHigh)', 'gemini-4-neon-xhigh'), 'XHigh');
   assert.equal(extractThinkingEffort('', 'gemini-4-hydrogen-xhigh'), 'XHigh');
   assert.equal(extractThinkingEffort('Claude Opus 5.5 (Max)', 'claude-opus-5-5-max'), 'Max');
-  assert.equal(extractThinkingEffort('Orchestrator (Neon)', 'gemini-pro-orchestrator-neon'), 'High');
+  assert.equal(extractThinkingEffort('Orchestrator (Neon)', 'gemini-pro-orchestrator-neon'), 'XHigh');
+  assert.equal(extractThinkingEffort('Orchestrator (Carbon)', 'gemini-pro-orchestrator'), 'High');
   assert.equal(cleanModelBadgeLabel('', 'gemini-4-neon-xhigh'), 'Gemini 4 Neon (XHigh)');
   assert.equal(cleanModelBadgeLabel('', 'gemini-pro-orchestrator-neon'), 'Gemini Pro Orchestrator Neon');
 
@@ -878,7 +890,7 @@ test('warm XHigh, Max, and Orchestrator models extract effort, format short labe
   const warmNeonMeta = resolveModelMetadata(warmCatalog, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M901' } });
   assert.equal(warmNeonMeta.thinkingEffort, 'XHigh');
   const warmOrchMeta = resolveModelMetadata(warmCatalog, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M905' } });
-  assert.equal(warmOrchMeta.thinkingEffort, 'High');
+  assert.equal(warmOrchMeta.thinkingEffort, 'XHigh');
 
   // 1. Warm XHigh turn with 40 thinking tokens -> unused_effort, shortModelLabel '4 Neon (XHigh)' (never doubled)
   const unusedRes = analyzeModelAndEffortFit(
@@ -894,7 +906,7 @@ test('warm XHigh, Max, and Orchestrator models extract effort, format short labe
   assert.equal(unusedRes.latestTurnFit.status, 'unused_effort');
   assert.equal(unusedRes.latestTurnFit.recommendedModel, '4 Hydrogen (Low)');
 
-  // 2. Warm XHigh turn with loop_tax -> steps down one tier to '4 Neon (High)'
+  // 2. Warm XHigh flagship turn with loop_tax -> recommends dual-model '4 Neon → 4 Hydrogen'
   const loopRes = analyzeModelAndEffortFit(
     [
       { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M901', timeToFirstToken: '2.0s', usage: { inputTokens: 20000, outputTokens: 100, thinkingOutputTokens: 150 } } },
@@ -912,7 +924,7 @@ test('warm XHigh, Max, and Orchestrator models extract effort, format short labe
     warmCatalog
   );
   assert.equal(loopRes.latestTurnFit.status, 'loop_tax');
-  assert.equal(loopRes.latestTurnFit.recommendedModel, '4 Neon (High)');
+  assert.equal(loopRes.latestTurnFit.recommendedModel, '4 Neon → 4 Hydrogen');
 
   // 3. Warm XHigh turn with edit -> failed test -> fix edit (0 modelCorrectableRetries) is NOT !isHigh thrashing
   const editFixRes = analyzeModelAndEffortFit(
@@ -931,7 +943,7 @@ test('warm XHigh, Max, and Orchestrator models extract effort, format short labe
   );
   assert.equal(editFixRes.latestTurnFit.status, 'optimal');
 
-  // 4. Warm Orchestrator (Neon) formats shortModelLabel without duplicating effort
+  // 4. Warm Orchestrator (Neon) formats shortModelLabel without duplicating effort and resolves XHigh
   const orchRes = analyzeModelAndEffortFit(
     [{ stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M905', timeToFirstToken: '5.0s', usage: { inputTokens: 20000, outputTokens: 300, thinkingOutputTokens: 1200 } } }],
     [
@@ -940,6 +952,124 @@ test('warm XHigh, Max, and Orchestrator models extract effort, format short labe
     ],
     warmCatalog
   );
-  assert.equal(orchRes.latestTurnFit.effort, 'High');
+  assert.equal(orchRes.latestTurnFit.effort, 'XHigh');
   assert.equal(orchRes.latestTurnFit.shortModelLabel, 'Orchestrator (Neon)');
+});
+
+test('2.34.0 dual-model Orchestrator + Executor turns avoid false loop_tax, single-flagship loop_tax recommends dual-model, and step.model fallback resolves executed model', () => {
+  const catalog234 = {
+    clientModelConfigs: [
+      { label: 'Gemini 4 Neon (High)', modelId: 'gemini-4-neon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M532' } },
+      { label: 'Gemini 4 Hydrogen (High)', modelId: 'gemini-4-hydrogen-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M525' } },
+      { label: 'Gemini 4 Hydrogen (XHigh)', modelId: 'gemini-4-hydrogen-xhigh', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M528' } },
+      { label: 'Claude Opus 5.5 (High)', modelId: 'claude-opus-5-5-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M402' } },
+      { label: 'Claude Sonnet 5.5 (High)', modelId: 'claude-sonnet-5-5-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M405' } },
+    ],
+  };
+  const lookup = buildModelLookup(catalog234);
+
+  // 1. resolveInvocationModel prioritizes actual executed model (chatModel.model / stepModel) ahead of planModel / fallbackEnum
+  const execResolved = resolveInvocationModel(
+    {
+      plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532' },
+      chatModel: { model: 'MODEL_PLACEHOLDER_M525' },
+    },
+    lookup,
+    'MODEL_PLACEHOLDER_M532',
+  );
+  assert.equal(execResolved.modelId, 'gemini-4-hydrogen-high');
+  assert.equal(execResolved.isFlagship, false);
+  assert.equal(execResolved.profileKey, 'geminiFast');
+
+  const stepFallbackResolved = resolveInvocationModel(
+    { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532' }, chatModel: {} },
+    lookup,
+    'MODEL_PLACEHOLDER_M532',
+    'MODEL_PLACEHOLDER_M525',
+  );
+  assert.equal(stepFallbackResolved.modelId, 'gemini-4-hydrogen-high');
+  assert.equal(stepFallbackResolved.isFlagship, false);
+
+  // 2. Dual-model turn (invocation 0 Neon M532, invocations 1..4 Hydrogen M525) is 'optimal' (NOT loop_tax)
+  const dualSteps = [
+    {
+      type: 'CORTEX_STEP_TYPE_USER_INPUT',
+      userInput: {
+        userResponse: 'audit and update auth',
+        userConfig: {
+          plannerConfig: {
+            planModel: 'MODEL_PLACEHOLDER_M532',
+            planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M525' },
+          },
+        },
+      },
+    },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Plan.' } },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+    { type: 'CORTEX_STEP_TYPE_REPLACE_FILE_CONTENT', replaceFileContent: { targetFile: 'src/auth.mjs' } },
+  ];
+  const dualGens = [
+    { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M532', timeToFirstToken: '3.5s', usage: { inputTokens: 25000, outputTokens: 200, thinkingOutputTokens: 450 } } },
+    { stepIndices: [2], chatModel: { model: 'MODEL_PLACEHOLDER_M525', timeToFirstToken: '4.5s', usage: { inputTokens: 27000, outputTokens: 100, thinkingOutputTokens: 650 } } },
+    { stepIndices: [3], chatModel: { model: 'MODEL_PLACEHOLDER_M525', timeToFirstToken: '4.8s', usage: { inputTokens: 29000, outputTokens: 100, thinkingOutputTokens: 680 } } },
+    { stepIndices: [4], chatModel: { model: 'MODEL_PLACEHOLDER_M525', timeToFirstToken: '4.4s', usage: { inputTokens: 31000, outputTokens: 100, thinkingOutputTokens: 620 } } },
+    { stepIndices: [5], chatModel: { model: 'MODEL_PLACEHOLDER_M525', timeToFirstToken: '2.5s', usage: { inputTokens: 33000, outputTokens: 300, thinkingOutputTokens: 200 } } },
+  ];
+  const dualFit = analyzeModelAndEffortFit(dualGens, dualSteps, catalog234);
+  assert.equal(dualFit.latestTurnFit.status, 'optimal');
+  assert.equal(dualFit.latestTurnFit.shortModelLabel, '4 Neon → 4 Hydrogen');
+  assert.equal(dualFit.latestTurnFit.recommendedModel, '4 Neon → 4 Hydrogen');
+
+  // 3. Single-model flagship Gemini 4 Neon (High) hitting loop_tax recommends '4 Neon → 4 Hydrogen'
+  const singleNeonGens = dualGens.map((g) => ({
+    ...g,
+    chatModel: { ...g.chatModel, model: 'MODEL_PLACEHOLDER_M532' },
+  }));
+  const singleNeonSteps = [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'audit and update auth' } },
+    ...dualSteps.slice(1),
+  ];
+  const singleNeonFit = analyzeModelAndEffortFit(singleNeonGens, singleNeonSteps, catalog234);
+  assert.equal(singleNeonFit.latestTurnFit.status, 'loop_tax');
+  assert.equal(singleNeonFit.latestTurnFit.shortModelLabel, '4 Neon (High)');
+  assert.equal(singleNeonFit.latestTurnFit.recommendedModel, '4 Neon → 4 Hydrogen');
+
+  // 4. Single-model Claude flagship Opus 5.5 (High) hitting loop_tax recommends 'Opus 5.5 → Sonnet 5.5'
+  const singleClaudeGens = dualGens.map((g) => ({
+    ...g,
+    chatModel: { ...g.chatModel, model: 'MODEL_PLACEHOLDER_M402' },
+  }));
+  const singleClaudeFit = analyzeModelAndEffortFit(singleClaudeGens, singleNeonSteps, catalog234);
+  assert.equal(singleClaudeFit.latestTurnFit.status, 'loop_tax');
+  assert.equal(singleClaudeFit.latestTurnFit.shortModelLabel, 'Opus 5.5 (High)');
+  assert.equal(singleClaudeFit.latestTurnFit.recommendedModel, 'Opus 5.5 → Sonnet 5.5');
+
+  // 5. Non-flagship Gemini 4 Hydrogen (XHigh) hitting loop_tax still steps down effort to '4 Hydrogen (High)'
+  const singleHydGens = dualGens.map((g) => ({
+    ...g,
+    chatModel: { ...g.chatModel, model: 'MODEL_PLACEHOLDER_M528' },
+  }));
+  const singleHydFit = analyzeModelAndEffortFit(singleHydGens, singleNeonSteps, catalog234);
+  assert.equal(singleHydFit.latestTurnFit.status, 'loop_tax');
+  assert.equal(singleHydFit.latestTurnFit.recommendedModel, '4 Hydrogen (High)');
+
+  // 6. Step-level steps[idx].model fallback when chatModel.model is omitted
+  const stepOnlySteps = [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'check files' } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', model: 'MODEL_PLACEHOLDER_M532', plannerResponse: { response: 'Plan.' } },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE', model: 'MODEL_PLACEHOLDER_M525' },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE', model: 'MODEL_PLACEHOLDER_M525' },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', model: 'MODEL_PLACEHOLDER_M525', plannerResponse: { response: 'Done.' } },
+  ];
+  const stepOnlyGens = [
+    { stepIndices: [1], chatModel: { timeToFirstToken: '3.2s', usage: { inputTokens: 20000, outputTokens: 150, thinkingOutputTokens: 450 } } },
+    { stepIndices: [2], chatModel: { timeToFirstToken: '4.5s', usage: { inputTokens: 22000, outputTokens: 100, thinkingOutputTokens: 650 } } },
+    { stepIndices: [3], chatModel: { timeToFirstToken: '4.6s', usage: { inputTokens: 24000, outputTokens: 100, thinkingOutputTokens: 650 } } },
+    { stepIndices: [4], chatModel: { timeToFirstToken: '2.2s', usage: { inputTokens: 26000, outputTokens: 200, thinkingOutputTokens: 200 } } },
+  ];
+  const stepOnlyDualFit = analyzeModelAndEffortFit(stepOnlyGens, stepOnlySteps, catalog234);
+  assert.equal(stepOnlyDualFit.latestTurnFit.status, 'optimal');
+  assert.equal(stepOnlyDualFit.latestTurnFit.shortModelLabel, '4 Neon → 4 Hydrogen');
 });

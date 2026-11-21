@@ -10,6 +10,7 @@
   function renderModelProfileDrawer(data, state = {}) {
     if (!state.modelProfileOpen) return '';
     const { model = {}, context = {}, turnInsights = {} } = data || {};
+    const dm = !model.isCustom && model.dualModel?.active ? model.dualModel : null;
     const adv = turnInsights?.effortAdvisor;
     const lat = adv?.latestTurnFit;
     let fitText = lat
@@ -20,17 +21,34 @@
     const nativeText = model.isCustom
       ? 'Set by your provider'
       : `${context.formattedNativeCeiling || model.nativeCeilingFormatted || '1.0M'} single-turn burst`;
+    const headerTitle = dm ? model.badgeLabel || model.label || model.modelId : model.label || model.modelId;
+    const headerKind = dm
+      ? `Dual-Model (${dm.activeRole === 'executor' ? 'Executor active' : 'Planner active'})`
+      : 'Model Profile';
     return html`
       <div id="model-profile-drawer" class="model-profile-drawer">
         <div class="context-help-title">
-          <span>${esc(model.label || model.modelId)}</span>
-          <span>Model Profile</span>
+          <span>${esc(headerTitle)}</span>
+          <span>${esc(headerKind)}</span>
         </div>
         <div class="model-spec-grid">
-          <div class="model-spec-item">
-            <span class="spec-label">Reasoning Tier:</span>
-            <strong>${esc(model.thinkingEffort || (model.isCustom ? 'Set by your provider' : 'Standard'))}</strong>
-          </div>
+          ${dm
+            ? html`
+              <div class="model-spec-item" style="grid-column:span 2">
+                <span class="spec-label">Orchestrator (Planner):</span>
+                <strong>${esc(dm.plannerLabel)} · ${esc(dm.plannerEffort || 'Standard')}</strong>
+              </div>
+              <div class="model-spec-item" style="grid-column:span 2">
+                <span class="spec-label">Executor:</span>
+                <strong>${esc(dm.executorLabel)} · ${esc(dm.executorEffort || 'Standard')}</strong>
+              </div>
+            `
+            : html`
+              <div class="model-spec-item">
+                <span class="spec-label">Reasoning Tier:</span>
+                <strong>${esc(model.thinkingEffort || (model.isCustom ? 'Set by your provider' : 'Standard'))}</strong>
+              </div>
+            `}
           <div class="model-spec-item">
             <span class="spec-label">Harness Ceiling:</span>
             <strong>${esc(ceilingText)} autocompact</strong>

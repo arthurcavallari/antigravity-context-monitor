@@ -7,10 +7,13 @@ import { fetchFullTelemetry, clearConversationDetails } from '../lib/context-tel
 import { clearRpcCache, lsRpcCache } from '../lib/rpc-cache.mjs';
 import {
   clearModelCatalogState,
+  collectReferencedModelKeys,
   extractThinkingEffort,
+  mapThinkingLevel,
   stripModelFamilySlug,
   stripModelSuffixAndVendor,
 } from '../lib/model-catalog.mjs';
+import { STATIC_MODEL_FALLBACKS } from '../lib/constants.mjs';
 import { clearReportedTurnKeys, reportSettledTurnTelemetry } from '../lib/turn-telemetry-reporter.mjs';
 
 const VALID_UUID = '12345678-1234-4234-8234-1234567890ab';
@@ -492,4 +495,48 @@ test('model-catalog-cache.json persists compact catalog across cold LS restarts,
   assert.equal(stripModelSuffixAndVendor(`Gemini ${' '.repeat(50_000)}(Nope)`), '(Nope)');
   assert.equal(stripModelFamilySlug(`gemini${'-tiered-'.repeat(10_000)}x`), 'gemini');
   assert.ok(performance.now() - t0 < 200);
+});
+
+test('2.34.0 M537 XHigh, mapThinkingLevel(7), Orchestrator (Neon) effort, and collectReferencedModelKeys dual-model/step keys', () => {
+  assert.equal(STATIC_MODEL_FALLBACKS.MODEL_PLACEHOLDER_M537.thinkingEffort, 'XHigh');
+  assert.equal(STATIC_MODEL_FALLBACKS.MODEL_PLACEHOLDER_M667.thinkingEffort, 'High');
+  assert.equal(mapThinkingLevel(7), 'XHigh');
+  assert.equal(mapThinkingLevel(5), 'XHigh');
+  assert.equal(mapThinkingLevel(100), 'XHigh');
+  assert.equal(extractThinkingEffort('Orchestrator (Neon)', 'gemini-pro-orchestrator-neon'), 'XHigh');
+  assert.equal(extractThinkingEffort('Orchestrator (Neon)', ''), 'XHigh');
+  assert.equal(extractThinkingEffort('Orchestrator (Carbon)', 'gemini-pro-orchestrator'), 'High');
+
+  const refs = collectReferencedModelKeys(
+    [
+      {
+        type: 'CORTEX_STEP_TYPE_USER_INPUT',
+        userInput: {
+          userConfig: {
+            plannerConfig: {
+              planModel: 'MODEL_PLACEHOLDER_M532',
+              planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M525' },
+            },
+          },
+        },
+      },
+      {
+        type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+        model: 'MODEL_PLACEHOLDER_M977',
+      },
+    ],
+    [
+      {
+        plannerConfig: {
+          planModel: 'MODEL_PLACEHOLDER_M532',
+          planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M988' },
+        },
+        chatModel: { usage: { apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } },
+      },
+    ],
+  );
+  assert.ok(refs.includes('MODEL_PLACEHOLDER_M532'));
+  assert.ok(refs.includes('MODEL_PLACEHOLDER_M525'), 'collects step planExecuteConfig.executionModel');
+  assert.ok(refs.includes('MODEL_PLACEHOLDER_M988'), 'collects generator planExecuteConfig.executionModel');
+  assert.ok(refs.includes('MODEL_PLACEHOLDER_M977'), 'collects step-level steps[i].model');
 });

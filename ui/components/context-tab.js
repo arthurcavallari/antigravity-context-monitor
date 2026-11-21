@@ -96,8 +96,12 @@
     const refreshSvg = icon('refresh', 14);
     const activeTab = state.activeTab || 'context';
     const { model = {}, context = {}, session = {}, subagents = {} } = data || {};
+    const dm = model.dualModel?.active ? model.dualModel : null;
     let badgeClass = model.isGemini === false ? 'model-badge claude' : 'model-badge';
     if (model.isCustom) badgeClass = 'model-badge custom';
+    const badgeTitle = dm
+      ? html`Dual-model: Orchestrator ${esc(dm.plannerLabel)} · Executor ${esc(dm.executorLabel)} (${dm.activeRole === 'executor' ? 'Executor' : 'Orchestrator'} active)`
+      : 'Model profile and specs';
     const risk = context.compactionRisk || 'normal';
     const usageCls = risk === 'warn' || risk === 'danger' ? `cw-Usage-text ${risk}` : 'cw-Usage-text';
     const ceilingText = context.formattedCeiling || '256k';
@@ -105,9 +109,12 @@
     const sessionRunning = session?.status === 'CASCADE_RUN_STATUS_RUNNING';
     const subagentsRunning = Number(subagents?.runningCount || 0) > 0;
     const pulseActive = Boolean(isPulseActive || sessionRunning || subagentsRunning);
+    const activeTurnLabel = dm
+      ? `${dm.activeRole === 'executor' ? 'Executor' : 'Orchestrator'} turn executing / consuming tokens`
+      : 'Agent turn executing / consuming tokens';
     const pulseTitle = !sessionRunning && subagentsRunning
       ? html`Subagent executing: ${esc(subagents.activeSubagentLabel || 'subagent')}`
-      : (pulseActive ? 'Agent turn executing / consuming tokens' : 'Idle');
+      : (pulseActive ? activeTurnLabel : 'Idle');
 
     return html`
       <header class="cw-header">
@@ -119,7 +126,7 @@
             class="${badgeClass} clickable"
             aria-expanded="${state.modelProfileOpen ? 'true' : 'false'}"
             aria-controls="model-profile-drawer"
-            title="Model profile and specs"
+            title="${badgeTitle}"
           >
             ${esc(model.badgeLabel || 'Gemini')}<span class="badge-chevron ${state.modelProfileOpen ? 'open' : ''}" aria-hidden="true">${icon('expand_more', 12)}</span>
           </button>

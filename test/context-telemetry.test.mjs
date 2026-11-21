@@ -1586,3 +1586,223 @@ test('hydrateSwarmSummaries reads 2.33.0 plan.json tasks/threads and distinguish
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('2.34.0 single-model Orchestrator (Neon) M537 resolves XHigh with dualModel: null, while dual-model planExecute resolves Orchestrator + Executor telemetry & UI profile', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { dirname } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const vm = await import('node:vm');
+
+  // 1. Single-model M537 (cold static fallback & warm thinkingLevel: 100) must NOT conflate /orchestrator/i with dualModel
+  const coldOrch = resolveModelMetadata({}, { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M537' } }, []);
+  assert.equal(coldOrch.thinkingEffort, 'XHigh');
+  assert.equal(coldOrch.dualModel, null);
+  assert.equal(coldOrch.badgeLabel, 'Orchestrator (Neon)');
+
+  const warmOrch = resolveModelMetadata(
+    {
+      response: {
+        models: {
+          'gemini-pro-orchestrator-neon': {
+            model: 'MODEL_PLACEHOLDER_M537',
+            displayName: 'Orchestrator (Neon)',
+            modelProvider: 'MODEL_PROVIDER_GOOGLE',
+            apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+            thinkingLevel: 100,
+          },
+        },
+      },
+    },
+    { chatModel: { model: 'MODEL_PLACEHOLDER_M537' } },
+    [],
+    { annotations: { planExecute: true } }, // Even with annotation, single model with no second model stays dualModel: null
+  );
+  assert.equal(warmOrch.thinkingEffort, 'XHigh');
+  assert.equal(warmOrch.dualModel, null);
+  assert.equal(warmOrch.badgeLabel, 'Orchestrator (Neon)');
+
+  // Same model in planModel and executionModel -> dualModel: null
+  const sameExec = resolveModelMetadata(
+    {},
+    {
+      plannerConfig: {
+        planModel: 'MODEL_PLACEHOLDER_M532',
+        planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M532' },
+      },
+    },
+    [],
+  );
+  assert.equal(sameExec.dualModel, null);
+  assert.equal(sameExec.badgeLabel, 'Gemini 4 Neon (High)');
+
+  // Step-level steps[idx].model fallback when chatModel.model is omitted
+  const stepOnlySingle = resolveModelMetadata(
+    {},
+    { stepIndices: [1], chatModel: { usage: { inputTokens: 1000 } } },
+    [
+      { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'hi' } },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', model: 'MODEL_PLACEHOLDER_M525' },
+    ],
+  );
+  assert.equal(stepOnlySingle.modelId, 'gemini-4-hydrogen-high');
+  assert.equal(stepOnlySingle.badgeLabel, 'Gemini 4 Hydrogen (High)');
+  assert.equal(stepOnlySingle.dualModel, null);
+
+  // 2. End-to-end dual-model session (Neon Planner M532 -> Hydrogen Executor M525)
+  clearRpcCache();
+  clearConversationDetails();
+  try {
+    const dualSteps = [
+      {
+        type: 'CORTEX_STEP_TYPE_USER_INPUT',
+        status: 'CORTEX_STEP_STATUS_DONE',
+        userInput: {
+          userResponse: 'refactor module across repo',
+          userConfig: {
+            plannerConfig: {
+              planModel: 'MODEL_PLACEHOLDER_M532',
+              planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M525' },
+            },
+          },
+        },
+      },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'Plan ready.' } },
+      { type: 'CORTEX_STEP_TYPE_VIEW_FILE', status: 'CORTEX_STEP_STATUS_DONE' },
+      { type: 'CORTEX_STEP_TYPE_VIEW_FILE', status: 'CORTEX_STEP_STATUS_DONE' },
+      { type: 'CORTEX_STEP_TYPE_VIEW_FILE', status: 'CORTEX_STEP_STATUS_DONE' },
+      { type: 'CORTEX_STEP_TYPE_REPLACE_FILE_CONTENT', status: 'CORTEX_STEP_STATUS_DONE', replaceFileContent: { targetFile: 'src/mod.mjs' } },
+    ];
+    const dualGens = [
+      {
+        stepIndices: [1],
+        plannerConfig: {
+          planModel: 'MODEL_PLACEHOLDER_M532',
+          planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M525' },
+        },
+        chatModel: {
+          model: 'MODEL_PLACEHOLDER_M532',
+          timeToFirstToken: '3.5s',
+          usage: { inputTokens: '30000', outputTokens: '250', thinkingOutputTokens: '500' },
+        },
+      },
+      {
+        stepIndices: [2],
+        chatModel: {
+          model: 'MODEL_PLACEHOLDER_M525',
+          timeToFirstToken: '4.2s',
+          usage: { inputTokens: '32000', outputTokens: '120', thinkingOutputTokens: '650' },
+        },
+      },
+      {
+        stepIndices: [3],
+        chatModel: {
+          model: 'MODEL_PLACEHOLDER_M525',
+          timeToFirstToken: '4.5s',
+          usage: { inputTokens: '34000', outputTokens: '120', thinkingOutputTokens: '620' },
+        },
+      },
+      {
+        stepIndices: [4],
+        chatModel: {
+          model: 'MODEL_PLACEHOLDER_M525',
+          timeToFirstToken: '4.1s',
+          usage: { inputTokens: '36000', outputTokens: '120', thinkingOutputTokens: '600' },
+        },
+      },
+      {
+        stepIndices: [5],
+        chatModel: {
+          model: 'MODEL_PLACEHOLDER_M525',
+          timeToFirstToken: '2.4s',
+          usage: { inputTokens: '38000', outputTokens: '300', thinkingOutputTokens: '250' },
+        },
+      },
+    ];
+
+    // Planner active on invocation 0
+    const atPlan = resolveModelMetadata({}, dualGens[0], dualSteps.slice(0, 2), { annotations: { planExecute: true } });
+    assert.equal(atPlan.dualModel?.active, true);
+    assert.equal(atPlan.dualModel?.activeRole, 'planner');
+    assert.equal(atPlan.badgeLabel, '4 Neon → 4 Hydrogen');
+
+    // Full telemetry after invocation 4 (Executor active)
+    const full = await fetchFullTelemetry({
+      lsAddress: '127.0.0.1:59734',
+      csrfToken: 'tok',
+      configPath: join(tmpdir(), 'nonexistent-234.json'),
+      hostCascadeId: 'conv-dual-234',
+      fetchFn: async (url, init) => {
+        const method = url.slice(url.lastIndexOf('/') + 1);
+        const req = JSON.parse(init?.body || '{}');
+        let body = {};
+        if (method === 'GetAllCascadeTrajectories') {
+          body = {
+            trajectorySummaries: {
+              'conv-dual-234': {
+                status: 'CASCADE_RUN_STATUS_IDLE',
+                stepCount: dualSteps.length,
+                lastModifiedTime: '2026-11-21T08:00:00Z',
+                annotations: { title: 'Dual Model Run', planExecute: true },
+              },
+            },
+          };
+        } else if (method === 'GetCascadeTrajectorySteps') {
+          body = { steps: dualSteps.slice(req.stepOffset || 0) };
+        } else if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
+          body = { generatorMetadata: dualGens.slice(req.generatorMetadataOffset || 0) };
+        }
+        return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+      },
+    });
+
+    assert.deepEqual(full.model.dualModel, {
+      active: true,
+      plannerLabel: 'Gemini 4 Neon (High)',
+      plannerShort: '4 Neon',
+      plannerEffort: 'High',
+      executorLabel: 'Gemini 4 Hydrogen (High)',
+      executorShort: '4 Hydrogen',
+      executorEffort: 'High',
+      activeRole: 'executor',
+    });
+    assert.equal(full.model.badgeLabel, '4 Neon → 4 Hydrogen');
+    assert.equal(full.turnInsights.effortAdvisor.latestTurnFit.status, 'optimal');
+    assert.equal(full.turnInsights.effortAdvisor.latestTurnFit.shortModelLabel, '4 Neon → 4 Hydrogen');
+
+    // Annotations.planExecute + step-level models when planExecuteConfig and chatModel.model are omitted
+    const annotDual = resolveModelMetadata(
+      {},
+      { stepIndices: [2], chatModel: { usage: { inputTokens: 5000 } } },
+      [
+        { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'go' } },
+        { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', model: 'MODEL_PLACEHOLDER_M532' },
+        { type: 'CORTEX_STEP_TYPE_VIEW_FILE', model: 'MODEL_PLACEHOLDER_M525' },
+      ],
+      { annotations: { planExecute: true } },
+    );
+    assert.equal(annotDual.dualModel?.active, true);
+    assert.equal(annotDual.dualModel?.activeRole, 'executor');
+    assert.equal(annotDual.badgeLabel, '4 Neon → 4 Hydrogen');
+
+    // 3. UI Header & Model Profile Drawer render Orchestrator (Planner) + Executor rows cleanly
+    const uiDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui');
+    const ctx = vm.createContext({ window: {} });
+    for (const rel of ['core.js', 'components/context-drawers.js', 'components/context-tab.js']) {
+      vm.runInContext(readFileSync(join(uiDir, rel), 'utf8'), ctx, { filename: rel });
+    }
+    const ui = ctx.window.ContextMonitor;
+    const headerHtml = ui.renderTopHeaderAndTabs(full, { activeTab: 'context', modelProfileOpen: true }, true);
+    assert.ok(headerHtml.includes('4 Neon → 4 Hydrogen'));
+    assert.match(headerHtml, /Orchestrator \(Planner\):/);
+    assert.ok(headerHtml.includes('Gemini 4 Neon (High) · High'));
+    assert.match(headerHtml, /Executor:/);
+    assert.ok(headerHtml.includes('Gemini 4 Hydrogen (High) · High'));
+    assert.match(headerHtml, /Harness Ceiling:/);
+    assert.match(headerHtml, /Native Window:/);
+    assert.match(headerHtml, /Max Output:/);
+    assert.match(headerHtml, /Prompt Fit:/);
+  } finally {
+    clearRpcCache();
+    clearConversationDetails();
+  }
+});
