@@ -114,6 +114,10 @@
     const target = e?.target?.nodeType === 3 ? e.target.parentElement : e?.target;
     if (!target || typeof target.closest !== 'function') return;
     if (handleContextClick?.(target, state, resetPinTracking, refreshTelemetry, refreshDiagnostics, render)) return;
+    if (state.activeTab === 'diagnostics' || target.closest('#diag-export-btn')) {
+      await handleDiagnosticsAction?.(target, e, state, runAction, refreshDiagnostics);
+      return;
+    }
     if (await handleMcpAction?.(target, state, computeTabBodyHtml, runAction, refreshTelemetry, apiCall, render)) return;
     await handleDiagnosticsAction?.(target, e, state, runAction, refreshDiagnostics);
   }

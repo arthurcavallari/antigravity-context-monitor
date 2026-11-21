@@ -384,6 +384,22 @@ test('describeChatStep populates normalized fileUri and isArtifact on VIEW_FILE,
         },
       },
     },
+    {
+      type: 'CORTEX_STEP_TYPE_VIEW_FILE',
+      metadata: {
+        toolCall: {
+          argumentsJson: JSON.stringify({ AbsolutePath: '/repo/100% coverage/file#1?draft.md' }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_WRITE_TO_FILE',
+      metadata: {
+        toolCall: {
+          argumentsJson: JSON.stringify({ TargetFile: 'C:\\Users\\dev\\100% coverage\\file#1?draft.md' }),
+        },
+      },
+    },
   ];
 
   const viewUri = describeChatStep('Step 0 (VIEW_FILE)', steps);
@@ -413,6 +429,14 @@ test('describeChatStep populates normalized fileUri and isArtifact on VIEW_FILE,
   const relWrite = describeChatStep('Step 6 (WRITE_TO_FILE)', steps);
   assert.equal(relWrite.fileUri, undefined);
   assert.equal(relWrite.isArtifact, undefined);
+
+  const specialPosix = describeChatStep('Step 7 (VIEW_FILE)', steps);
+  assert.equal(specialPosix.fileUri, 'file:///repo/100%25%20coverage/file%231%3Fdraft.md');
+  assert.equal(specialPosix.isArtifact, false);
+
+  const specialWin = describeChatStep('Step 8 (WRITE_TO_FILE)', steps);
+  assert.equal(specialWin.fileUri, 'file:///c:/Users/dev/100%25%20coverage/file%231%3Fdraft.md');
+  assert.equal(specialWin.isArtifact, false);
 });
 
 test('renderCulpritsDrawer renders file steps as .culprit-file-open buttons, and session-bar/diagnostics controls render #new-conv-btn and #diag-export-btn', () => {

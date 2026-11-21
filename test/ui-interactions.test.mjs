@@ -644,9 +644,22 @@ test('clicking #diag-export-btn invokes AgyShell.downloadFile producing valid JS
   domDoc.getElementById('diag-log-toggle').click();
   await timers.advance(0);
 
+  let enteredDownloadFileSync = false;
+  window.AgyShell.downloadFile = async (opts) => {
+    enteredDownloadFileSync = true;
+    const raw = await opts.produce();
+    downloadCalls.push({ opts, raw });
+    return { ok: true, mode: 'direct' };
+  };
+
   const exportBtn = domDoc.getElementById('diag-export-btn');
   assert.ok(exportBtn, 'renders #diag-export-btn in diagnostics controls');
   exportBtn.click();
+  assert.equal(
+    enteredDownloadFileSync,
+    true,
+    '#diag-export-btn click must enter AgyShell.downloadFile synchronously before any microtask yield'
+  );
   await timers.advance(0);
 
   assert.equal(downloadCalls.length, 1);
@@ -664,17 +677,24 @@ test('clicking #diag-export-btn invokes AgyShell.downloadFile producing valid JS
   assert.deepEqual(parsed.logs, [{ level: 'warn', text: 'HTTP 429 retry #1' }]);
 
   // Also verify delegation through real AgyShell + AgyUI (sandboxed iframe fallback modal)
-  const { window: kitWin, document: kitDoc, HTMLElement: KitEl, customElements: kitCE, CustomEvent: KitEv } = parseHTML(
+  const { window: kitWin, document: kitDoc, HTMLElement: KitEl, Element: KitElement, customElements: kitCE, CustomEvent: KitEv } = parseHTML(
     '<!doctype html><html><body><div id="app"></div></body></html>'
   );
+  Object.defineProperty(kitDoc, 'hidden', { value: false, configurable: true });
   for (const key of ['AgyUI', 'AgyShell', 'ContextMonitor']) kitWin[key] = undefined;
   const kitPosted = [];
+  const winOpenCalls = [];
   Object.assign(kitWin, {
     parent: { postMessage: (msg, origin) => kitPosted.push({ msg, origin }) },
     location: { search: '?conversationId=conv-kit' },
+    open: (url, target) => {
+      winOpenCalls.push({ url, target });
+      return null;
+    },
     Blob,
     URL,
     HTMLElement: KitEl,
+    Element: KitElement,
     customElements: kitCE,
     CustomEvent: KitEv,
   });
@@ -682,17 +702,39 @@ test('clicking #diag-export-btn invokes AgyShell.downloadFile producing valid JS
     window: kitWin,
     document: kitDoc,
     HTMLElement: KitEl,
+    Element: KitElement,
     customElements: kitCE,
     CustomEvent: KitEv,
     Blob,
     URL,
     URLSearchParams,
+    requestAnimationFrame: (fn) => fn(),
     setTimeout: timers.setTimeout,
     clearTimeout: timers.clearTimeout,
   });
   vm.runInContext(AGY_CLIENT_JS, kitCtx, { filename: 'shell.js' });
   vm.runInContext(buildAgyUiJs(['core', 'tabs', 'overlays', 'controls', 'surfaces']), kitCtx, { filename: 'ui.js' });
   for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), kitCtx, { filename: rel });
+  kitWin.ContextMonitor.apiCall = async (path) => (
+    path === '/api/diagnostics'
+      ? { terminals: [], sidecars: [], logs: [] }
+      : { isExecuting: false, session: { cascadeId: 'conv-kit' }, context: { totalUsedTokens: 100 } }
+  );
+  vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), kitCtx, { filename: 'app.js' });
+  await timers.advance(0);
+
+  kitDoc.querySelector('[data-tab="diagnostics"]').click();
+  await timers.advance(0);
+
+  kitDoc.getElementById('diag-export-btn').click();
+  assert.equal(
+    winOpenCalls.length,
+    1,
+    'clicking #diag-export-btn invokes window.open synchronously inside the user click gesture'
+  );
+  assert.deepEqual(winOpenCalls[0], { url: '', target: '_blank' });
+  await timers.advance(0);
+  assert.ok(kitDoc.querySelector('.agy-download-modal'), 'real AgyShell.downloadFile opens AgyUI download modal when popup is blocked');
 
   kitWin.ContextMonitor.newConversation();
   kitWin.ContextMonitor.toggleAuxPane({ tabType: 'fileView', uri: 'file:///c:/a.js', background: true, keepOpen: true });
@@ -701,13 +743,4 @@ test('clicking #diag-export-btn invokes AgyShell.downloadFile producing valid JS
     type: 'toggle-aux-pane',
     payload: { tabType: 'fileView', uri: 'file:///c:/a.js', background: true, keepOpen: true },
   });
-  const modalRes = await kitWin.ContextMonitor.downloadFile({
-    filename: 'context-monitor-diagnostics.json',
-    mimeType: 'application/json',
-    title: 'Context Monitor Diagnostics',
-    produce: () => '{"diagnostics":{},"logs":[]}',
-  });
-  assert.equal(modalRes.ok, true);
-  assert.equal(modalRes.mode, 'fallback');
-  assert.ok(kitDoc.querySelector('.agy-download-modal'), 'real AgyShell.downloadFile opens AgyUI download modal in sandboxed iframe');
 });
