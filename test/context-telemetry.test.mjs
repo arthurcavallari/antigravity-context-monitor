@@ -2017,3 +2017,160 @@ test('fetchFullTelemetry detects dual-model without userInput.userConfig and res
     clearConversationDetails();
   }
 });
+
+test('cross-vendor and custom-executor dual-model turns preserve Planner apiProvider, isGemini, ceilings, and quota group', async () => {
+  clearRpcCache();
+  clearConversationDetails();
+  try {
+    const modelConfigData = {
+      clientModelConfigs: [
+        { label: 'Gemini 4 Neon (High)', modelId: 'gemini-4-neon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M532' } },
+        { label: 'Claude Sonnet 4.6', modelId: 'claude-sonnet-4-6', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M405' } },
+        { label: 'DeepSeek R1 BYOM', modelId: 'deepseek-r1-corp' },
+      ],
+    };
+
+    // (a) Cross-vendor Dual-Model: Gemini 4 Neon (High) Planner + Claude Sonnet 4.6 Executor (API_PROVIDER_ANTHROPIC_VERTEX on activeGen)
+    const crossSteps = [
+      {
+        type: 'CORTEX_STEP_TYPE_USER_INPUT',
+        status: 'CORTEX_STEP_STATUS_DONE',
+        userInput: {
+          userResponse: 'implement cross-vendor plan',
+          userConfig: {
+            plannerConfig: {
+              planModel: 'MODEL_PLACEHOLDER_M532',
+              planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M405' },
+            },
+          },
+        },
+      },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'Plan.' } },
+      { type: 'CORTEX_STEP_TYPE_REPLACE_FILE_CONTENT', status: 'CORTEX_STEP_STATUS_DONE', replaceFileContent: { targetFile: 'src/x.mjs' } },
+    ];
+    const crossGens = [
+      {
+        stepIndices: [1],
+        plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532', planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M405' } },
+        chatModel: { model: 'MODEL_PLACEHOLDER_M532', usage: { inputTokens: '20000', outputTokens: '200', thinkingOutputTokens: '500' } },
+      },
+      {
+        stepIndices: [2],
+        plannerConfig: { modelName: 'claude-sonnet-4-6' },
+        chatModel: {
+          model: 'MODEL_PLACEHOLDER_M405',
+          usage: { inputTokens: '22000', outputTokens: '180', apiProvider: 'API_PROVIDER_ANTHROPIC_VERTEX' },
+        },
+      },
+    ];
+
+    const crossFull = await fetchFullTelemetry({
+      lsAddress: '127.0.0.1:59738',
+      csrfToken: 'tok',
+      configPath: join(tmpdir(), 'nonexistent-234-cross.json'),
+      hostCascadeId: 'conv-cross-234',
+      fetchFn: async (url) => {
+        const method = url.slice(url.lastIndexOf('/') + 1);
+        let body = {};
+        if (method === 'GetAllCascadeTrajectories') {
+          body = {
+            trajectorySummaries: {
+              'conv-cross-234': {
+                status: 'CASCADE_RUN_STATUS_IDLE',
+                stepCount: crossSteps.length,
+                lastModifiedTime: '2026-11-21T10:00:00Z',
+                annotations: { planExecute: true },
+              },
+            },
+          };
+        } else if (method === 'GetCascadeModelConfigData') {
+          body = modelConfigData;
+        } else if (method === 'GetCascadeTrajectorySteps') {
+          body = { steps: crossSteps };
+        } else if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
+          body = { generatorMetadata: crossGens };
+        } else if (method === 'RetrieveUserQuotaSummary') {
+          body = {
+            response: {
+              groups: [
+                { displayName: 'Gemini Models', buckets: [{ window: '5h', remainingFraction: 0.8 }] },
+                { displayName: 'Claude & GPT Models', buckets: [{ window: '5h', remainingFraction: 0.4 }] },
+              ],
+            },
+          };
+        }
+        return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+      },
+    });
+
+    assert.equal(crossFull.model.modelId, 'gemini-4-neon-high');
+    assert.equal(crossFull.model.apiProvider, 'API_PROVIDER_GOOGLE_GEMINI');
+    assert.equal(crossFull.model.isGemini, true);
+    assert.equal(crossFull.model.isCustom, false);
+    assert.equal(crossFull.model.ceiling, GEMINI_CONTEXT_CEILING);
+    assert.equal(crossFull.model.nativeCeiling, GEMINI_NATIVE_CEILING);
+    assert.equal(crossFull.model.dualModel?.active, true);
+    assert.equal(crossFull.model.dualModel?.activeRole, 'executor');
+    assert.equal(crossFull.model.dualModel?.plannerLabel, 'Gemini 4 Neon (High)');
+    assert.equal(crossFull.model.dualModel?.executorLabel, 'Claude Sonnet 4.6');
+    assert.equal(crossFull.model.badgeLabel, '4 Neon → Sonnet 4.6');
+    assert.equal(crossFull.planUsage.customModel, false);
+    assert.equal(crossFull.planUsage.activeGroupId, 'gemini');
+
+    // (b) Built-in Gemini Planner + Custom BYOM Executor (API_PROVIDER_CUSTOM_OPENAI on activeGen) keeps primary Planner isCustom: false
+    const byomExecSteps = [
+      {
+        type: 'CORTEX_STEP_TYPE_USER_INPUT',
+        status: 'CORTEX_STEP_STATUS_DONE',
+        userInput: {
+          userResponse: 'plan with neon, execute with custom openai',
+          userConfig: {
+            plannerConfig: {
+              planModel: 'MODEL_PLACEHOLDER_M532',
+              planExecuteConfig: { executionModel: 'deepseek-r1-corp' },
+            },
+          },
+        },
+      },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'Plan.' } },
+      { type: 'CORTEX_STEP_TYPE_REPLACE_FILE_CONTENT', status: 'CORTEX_STEP_STATUS_DONE', replaceFileContent: { targetFile: 'src/y.mjs' } },
+    ];
+    const byomExecGens = [
+      {
+        stepIndices: [1],
+        plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532', planExecuteConfig: { executionModel: 'deepseek-r1-corp' } },
+        chatModel: { model: 'MODEL_PLACEHOLDER_M532', usage: { inputTokens: '18000', outputTokens: '150', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } },
+      },
+      {
+        stepIndices: [2],
+        plannerConfig: { modelName: 'deepseek-r1-corp' },
+        chatModel: { usage: { inputTokens: '19000', outputTokens: '120', apiProvider: 'API_PROVIDER_CUSTOM_OPENAI' } },
+      },
+    ];
+
+    const byomMeta = resolveModelMetadata(modelConfigData, byomExecGens, byomExecSteps, { annotations: { planExecute: true } });
+    assert.equal(byomMeta.modelId, 'gemini-4-neon-high');
+    assert.equal(byomMeta.isCustom, false);
+    assert.equal(byomMeta.isGemini, true);
+    assert.equal(byomMeta.apiProvider, 'API_PROVIDER_GOOGLE_GEMINI');
+    assert.equal(byomMeta.ceiling, GEMINI_CONTEXT_CEILING);
+    assert.equal(byomMeta.nativeCeiling, GEMINI_NATIVE_CEILING);
+
+    // Also when activeGen omits modelName and chatModel.model (only usage.apiProvider: 'API_PROVIDER_CUSTOM_OPENAI')
+    const bareByomMeta = resolveModelMetadata(
+      modelConfigData,
+      [
+        byomExecGens[0],
+        { stepIndices: [2], chatModel: { usage: { inputTokens: '19000', outputTokens: '120', apiProvider: 'API_PROVIDER_CUSTOM_OPENAI' } } },
+      ],
+      byomExecSteps,
+      { annotations: { planExecute: true } },
+    );
+    assert.equal(bareByomMeta.isCustom, false);
+    assert.equal(bareByomMeta.isGemini, true);
+    assert.equal(bareByomMeta.apiProvider, 'API_PROVIDER_GOOGLE_GEMINI');
+  } finally {
+    clearRpcCache();
+    clearConversationDetails();
+  }
+});

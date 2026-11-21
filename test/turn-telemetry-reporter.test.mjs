@@ -818,3 +818,247 @@ test('extractSettledTurnTelemetryRecords preserves XHigh (including Orchestrator
     clearReportedTurnKeys();
   }
 });
+
+test('2.34.0 dual-model turns resolve per-invocation executor modelId/effort/apiProvider/isCustom/_modelHint while keeping planner on turn summary', async () => {
+  clearReportedTurnKeys();
+  const dir = mkdtempSync(join(tmpdir(), 'cm-dual-tel-'));
+  const hangarPath = join(dir, 'hangar.json');
+  writeFileSync(
+    hangarPath,
+    JSON.stringify({
+      installId: VALID_UUID,
+      telemetry: true,
+      registryUrl: 'https://hangar.arthurcavallari.dev',
+    }),
+    'utf8',
+  );
+
+  const modelConfigData = {
+    clientModelConfigs: [
+      { label: 'Gemini 4 Neon (High)', modelId: 'gemini-4-neon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M532' } },
+      { label: 'Gemini 4 Hydrogen (Low)', modelId: 'gemini-4-hydrogen-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M527' } },
+      { label: 'Gemini 5 Xenon Flash (Low)', modelId: 'gemini-5-xenon-flash-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M990' } },
+      { label: 'Claude Sonnet 4.6 (Low)', modelId: 'claude-sonnet-4-6-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M409' }, apiProvider: 'API_PROVIDER_ANTHROPIC_VERTEX' },
+      { label: 'Private Internal DeepSeek', modelId: 'deepseek-r1-corp' },
+    ],
+  };
+
+  try {
+    // 1. Neon (High) Planner + Hydrogen (Low) Executor (including step-level steps[idx].model fallback) + warm new placeholder M990 Executor
+    const dualSteps = [
+      {
+        type: 'CORTEX_STEP_TYPE_USER_INPUT',
+        status: 'CORTEX_STEP_STATUS_DONE',
+        userInput: {
+          userResponse: 'refactor module',
+          userConfig: {
+            plannerConfig: {
+              planModel: 'MODEL_PLACEHOLDER_M532',
+              planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M527' },
+            },
+          },
+        },
+      },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'Plan ready.' } },
+      { type: 'CORTEX_STEP_TYPE_VIEW_FILE', status: 'CORTEX_STEP_STATUS_DONE', model: 'MODEL_PLACEHOLDER_M527' },
+      { type: 'CORTEX_STEP_TYPE_REPLACE_FILE_CONTENT', status: 'CORTEX_STEP_STATUS_DONE', replaceFileContent: { targetFile: 'src/a.mjs' } },
+      // Turn 2: Planner M532 + newly rolled-out M990 Executor (emits _modelHint for M990) + cold unmapped M999 Executor
+      {
+        type: 'CORTEX_STEP_TYPE_USER_INPUT',
+        status: 'CORTEX_STEP_STATUS_DONE',
+        userInput: {
+          userResponse: 'follow-up edit',
+          userConfig: {
+            plannerConfig: {
+              planModel: 'MODEL_PLACEHOLDER_M532',
+              planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M990' },
+            },
+          },
+        },
+      },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'Plan 2.' } },
+      { type: 'CORTEX_STEP_TYPE_VIEW_FILE', status: 'CORTEX_STEP_STATUS_DONE' },
+      { type: 'CORTEX_STEP_TYPE_REPLACE_FILE_CONTENT', status: 'CORTEX_STEP_STATUS_DONE', replaceFileContent: { targetFile: 'src/b.mjs' } },
+    ];
+    const dualGens = [
+      {
+        stepIndices: [1],
+        plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532', modelName: 'gemini-4-neon-high', planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M527' } },
+        chatModel: { model: 'MODEL_PLACEHOLDER_M532', timeToFirstToken: '3.2s', usage: { inputTokens: '20000', outputTokens: '180', thinkingOutputTokens: '420', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } },
+      },
+      {
+        stepIndices: [2], // Omitted chatModel.model -> resolved via steps[2].model
+        chatModel: { timeToFirstToken: '1.1s', usage: { inputTokens: '22000', outputTokens: '80', thinkingOutputTokens: '40', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } },
+      },
+      {
+        stepIndices: [3],
+        chatModel: { model: 'MODEL_PLACEHOLDER_M527', timeToFirstToken: '1.4s', usage: { inputTokens: '24000', outputTokens: '210', thinkingOutputTokens: '60', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } },
+      },
+      {
+        stepIndices: [5],
+        plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532', modelName: 'gemini-4-neon-high' },
+        chatModel: { model: 'MODEL_PLACEHOLDER_M532', timeToFirstToken: '3.0s', usage: { inputTokens: '25000', outputTokens: '150', thinkingOutputTokens: '380', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } },
+      },
+      {
+        stepIndices: [6],
+        chatModel: { model: 'MODEL_PLACEHOLDER_M990', timeToFirstToken: '0.9s', usage: { inputTokens: '26000', outputTokens: '90', thinkingOutputTokens: '30', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } },
+      },
+      {
+        stepIndices: [7],
+        plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532', modelName: 'gemini-4-neon-high' },
+        chatModel: { model: 'MODEL_PLACEHOLDER_M999', timeToFirstToken: '1.0s', usage: { inputTokens: '27000', outputTokens: '190', thinkingOutputTokens: '50', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } },
+      },
+    ];
+
+    const postedBodies = [];
+    const postRes = await reportSettledTurnTelemetry({
+      cascadeId: 'conv-dual-234-tel',
+      generatorMetadataList: dualGens,
+      steps: dualSteps,
+      modelConfigData,
+      options: {
+        hangarConfigPath: hangarPath,
+        telemetryStatePath: join(dir, 'state-dual.json'),
+        env: {},
+        telemetryFetchFn: async (_url, init) => {
+          postedBodies.push(JSON.parse(init.body));
+          return { ok: true, status: 202 };
+        },
+      },
+    });
+    assert.equal(postRes.sent, 8);
+    assert.equal(postedBodies.length, 1);
+    const recs = postedBodies[0].records;
+
+    // Turn 1 records: [plan (Neon High), loop (Hydrogen Low), edit (Hydrogen Low), turn (Neon High)]
+    assert.deepEqual(
+      recs.slice(0, 4).map((r) => ({ phase: r.phase, modelId: r.modelId, effort: r.effort, apiProvider: r.apiProvider })),
+      [
+        { phase: 'plan', modelId: 'gemini-4-neon-high', effort: 'High', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
+        { phase: 'loop', modelId: 'gemini-4-hydrogen-low', effort: 'Low', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
+        { phase: 'edit', modelId: 'gemini-4-hydrogen-low', effort: 'Low', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
+        { phase: 'turn', modelId: 'gemini-4-neon-high', effort: 'High', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' },
+      ],
+    );
+
+    // Turn 2 records: [plan (Neon High), loop (Xenon Flash Low via M990), edit (cold M999 Low), turn (Neon High)]
+    assert.deepEqual(
+      recs.slice(4, 8).map((r) => ({ phase: r.phase, modelId: r.modelId, effort: r.effort })),
+      [
+        { phase: 'plan', modelId: 'gemini-4-neon-high', effort: 'High' },
+        { phase: 'loop', modelId: 'gemini-5-xenon-flash-low', effort: 'Low' },
+        { phase: 'edit', modelId: 'MODEL_PLACEHOLDER_M999', effort: 'Low' },
+        { phase: 'turn', modelId: 'gemini-4-neon-high', effort: 'High' },
+      ],
+    );
+    assert.deepEqual(postedBodies[0].modelHints.MODEL_PLACEHOLDER_M990, {
+      modelId: 'gemini-5-xenon-flash-low',
+      effort: 'Low',
+      apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+      displayName: 'Gemini 5 Xenon Flash (Low)',
+    });
+    assert.equal(postedBodies[0].modelHints.MODEL_PLACEHOLDER_M999, undefined);
+
+    // 2. Cross-vendor Dual-Model (Gemini Neon Planner + Claude Sonnet Executor) & Mixed Built-in Planner + Custom BYOM Executor
+    clearReportedTurnKeys();
+    const mixedSteps = [
+      {
+        type: 'CORTEX_STEP_TYPE_USER_INPUT',
+        status: 'CORTEX_STEP_STATUS_DONE',
+        userInput: {
+          userResponse: 'cross-vendor turn',
+          userConfig: { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532', planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M409' } } },
+        },
+      },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'Plan.' } },
+      { type: 'CORTEX_STEP_TYPE_REPLACE_FILE_CONTENT', status: 'CORTEX_STEP_STATUS_DONE', replaceFileContent: { targetFile: 'src/c.mjs' } },
+      {
+        type: 'CORTEX_STEP_TYPE_USER_INPUT',
+        status: 'CORTEX_STEP_STATUS_DONE',
+        userInput: {
+          userResponse: 'mixed custom executor turn',
+          userConfig: { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532', planExecuteConfig: { executionModel: 'deepseek-r1-corp' } } },
+        },
+      },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'Plan custom.' } },
+      { type: 'CORTEX_STEP_TYPE_REPLACE_FILE_CONTENT', status: 'CORTEX_STEP_STATUS_DONE', replaceFileContent: { targetFile: 'src/d.mjs' } },
+    ];
+    const mixedGens = [
+      {
+        stepIndices: [1],
+        chatModel: { model: 'MODEL_PLACEHOLDER_M532', usage: { inputTokens: '15000', outputTokens: '120', thinkingOutputTokens: '350', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } },
+      },
+      {
+        stepIndices: [2],
+        chatModel: { model: 'MODEL_PLACEHOLDER_M409', usage: { inputTokens: '16000', outputTokens: '200', responseOutputTokens: '200', apiProvider: 'API_PROVIDER_ANTHROPIC_VERTEX' } },
+      },
+      {
+        stepIndices: [4],
+        chatModel: { model: 'MODEL_PLACEHOLDER_M532', usage: { inputTokens: '17000', outputTokens: '130', thinkingOutputTokens: '320', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } },
+      },
+      {
+        stepIndices: [5],
+        plannerConfig: { modelName: 'deepseek-r1-corp' },
+        chatModel: { usage: { inputTokens: '18000', outputTokens: '240', apiProvider: 'API_PROVIDER_CUSTOM_OPENAI_COMPAT' } },
+      },
+    ];
+
+    const mixedRecs = extractSettledTurnTelemetryRecords({
+      cascadeId: 'conv-mixed-234',
+      generatorMetadataList: mixedGens,
+      steps: mixedSteps,
+      modelConfigData,
+    });
+    assert.equal(mixedRecs.length, 6);
+    // Cross-vendor Turn 1
+    assert.equal(mixedRecs[0].phase, 'plan');
+    assert.equal(mixedRecs[0].modelId, 'gemini-4-neon-high');
+    assert.equal(mixedRecs[0].apiProvider, 'API_PROVIDER_GOOGLE_GEMINI');
+    assert.equal(mixedRecs[0].isCustom, undefined);
+    assert.equal(mixedRecs[1].phase, 'edit');
+    assert.equal(mixedRecs[1].modelId, 'claude-sonnet-4-6-low');
+    assert.equal(mixedRecs[1].effort, 'Low');
+    assert.equal(mixedRecs[1].apiProvider, 'API_PROVIDER_ANTHROPIC_VERTEX');
+    assert.equal(mixedRecs[1].isCustom, undefined);
+    assert.equal(mixedRecs[2].phase, 'turn');
+    assert.equal(mixedRecs[2].modelId, 'gemini-4-neon-high');
+    assert.equal(mixedRecs[2].effort, 'High');
+    assert.equal(mixedRecs[2].apiProvider, 'API_PROVIDER_GOOGLE_GEMINI');
+    assert.equal(mixedRecs[2].isCustom, undefined);
+
+    // Mixed Built-in Planner + Custom BYOM Executor Turn 2
+    assert.equal(mixedRecs[3].phase, 'plan');
+    assert.equal(mixedRecs[3].modelId, 'gemini-4-neon-high');
+    assert.equal(mixedRecs[3].effort, 'High');
+    assert.equal(mixedRecs[3].apiProvider, 'API_PROVIDER_GOOGLE_GEMINI');
+    assert.equal(mixedRecs[3].isCustom, undefined);
+    assert.equal(mixedRecs[4].phase, 'edit');
+    assert.equal(mixedRecs[4].modelId, 'deepseek-r1-corp');
+    assert.equal(mixedRecs[4].apiProvider, 'API_PROVIDER_CUSTOM_OPENAI_COMPAT');
+    assert.equal(mixedRecs[4].isCustom, true);
+    assert.equal(mixedRecs[5].phase, 'turn');
+    assert.equal(mixedRecs[5].modelId, 'gemini-4-neon-high');
+    assert.equal(mixedRecs[5].effort, 'High');
+    assert.equal(mixedRecs[5].apiProvider, 'API_PROVIDER_GOOGLE_GEMINI');
+    assert.equal(mixedRecs[5].isCustom, true);
+
+    clearReportedTurnKeys();
+    const mixedRedacted = extractSettledTurnTelemetryRecords({
+      cascadeId: 'conv-mixed-234-redacted',
+      generatorMetadataList: mixedGens,
+      steps: mixedSteps,
+      modelConfigData,
+      customNames: false,
+    });
+    assert.equal(mixedRedacted[3].modelId, 'gemini-4-neon-high');
+    assert.equal(mixedRedacted[3].isCustom, undefined);
+    assert.equal(mixedRedacted[4].modelId, 'custom');
+    assert.equal(mixedRedacted[4].apiProvider, 'API_PROVIDER_CUSTOM');
+    assert.equal(mixedRedacted[4].isCustom, true);
+    assert.equal(mixedRedacted[5].modelId, 'gemini-4-neon-high');
+    assert.equal(mixedRedacted[5].isCustom, true);
+  } finally {
+    clearReportedTurnKeys();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
