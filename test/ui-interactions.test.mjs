@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { parseHTML } from 'linkedom';
+import { buildAgyUiJs } from 'antigravity-sidecar-kit';
+import { AGY_CLIENT_JS } from 'antigravity-sidecar-kit/shell';
 
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui');
 const UI_SCRIPTS = [
@@ -450,4 +452,262 @@ test('notifyAgent resolves async window.sidecar.getWorkspaceUris() on _new conve
   assert.equal(notifyBodies[0].body.conversationId, '_new');
   assert.equal(notifyBodies[0].body.workspace, 'file:///c%3A/Users/arthu/IdeaProjects/antigravity-context-monitor');
   assert.equal(window.ContextMonitor.activeWorkspaceUri, 'file:///c%3A/Users/arthu/IdeaProjects/antigravity-context-monitor');
+});
+
+test('clicking [data-file-uri] dispatches background toggle-aux-pane for files and artifacts, and #new-conv-btn dispatches new-conversation with compactionRisk accents', async () => {
+  const timers = fakeTimers();
+  const { window: domWin, document: domDoc, HTMLElement, Element, customElements, CustomEvent } = parseHTML(
+    '<!doctype html><html><body><div id="app"></div></body></html>'
+  );
+  Object.defineProperty(domDoc, 'hidden', { value: false, configurable: true });
+  const posted = [];
+  let currentRisk = 'normal';
+  let currentSessionId = 'conv-active-1';
+  const window = Object.assign(domWin, {
+    parent: { postMessage: (msg, origin) => posted.push({ msg, origin }) },
+    location: { search: '?conversationId=conv-active-1' },
+    HTMLElement,
+    Element,
+    customElements,
+    CustomEvent,
+  });
+  const ctx = vm.createContext({
+    window,
+    document: domDoc,
+    HTMLElement,
+    Element,
+    customElements,
+    CustomEvent,
+    URLSearchParams,
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+  });
+  for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+  window.ContextMonitor.apiCall = async () => ({
+    isExecuting: false,
+    session: currentSessionId ? { cascadeId: currentSessionId, title: 'Main' } : null,
+    newConversation: !currentSessionId,
+    context: {
+      totalUsedTokens: 180_000,
+      ceilingTokens: 256_000,
+      compactionRisk: currentRisk,
+      categories: [],
+    },
+    turnInsights: {
+      culprits: {
+        topStepsTokens: 9000,
+        formattedTopStepsTokens: '9.0k top 2',
+        topChatSteps: [
+          {
+            badge: 'Read',
+            label: 'Viewed server.mjs',
+            stepRef: '#1',
+            fileUri: 'file:///c:/repo/server.mjs',
+            isArtifact: false,
+            formattedTokens: '5.0k',
+            barPct: 100,
+          },
+          {
+            badge: 'Edit',
+            label: 'Edited plan.md',
+            stepRef: '#2',
+            fileUri: 'file:///c:/Users/arthu/.gemini/antigravity/brain/conv-active-1/plan.md',
+            isArtifact: true,
+            formattedTokens: '4.0k',
+            barPct: 80,
+          },
+        ],
+        promptSections: [],
+      },
+    },
+    sessions: [{ cascadeId: 'conv-active-1', title: 'Main' }],
+  });
+
+  vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+  await timers.advance(0);
+
+  const newConvBtn = domDoc.getElementById('new-conv-btn');
+  assert.ok(newConvBtn, 'mounts #new-conv-btn in .session-bar');
+  assert.equal(newConvBtn.classList.contains('warn'), false);
+  assert.equal(newConvBtn.classList.contains('danger'), false);
+
+  newConvBtn.click();
+  assert.equal(posted.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(posted[0].msg)), { type: 'new-conversation' });
+
+  currentRisk = 'warn';
+  domDoc.getElementById('refresh-btn').click();
+  await timers.advance(0);
+  assert.equal(newConvBtn.classList.contains('warn'), true);
+  assert.equal(newConvBtn.classList.contains('danger'), false);
+
+  currentRisk = 'danger';
+  domDoc.getElementById('refresh-btn').click();
+  await timers.advance(0);
+  assert.equal(newConvBtn.classList.contains('warn'), false);
+  assert.equal(newConvBtn.classList.contains('danger'), true);
+
+  domDoc.getElementById('culprits-collapse-toggle').click();
+  const fileBtns = [...domDoc.querySelectorAll('[data-file-uri]')];
+  assert.equal(fileBtns.length, 2);
+
+  fileBtns[0].click();
+  assert.equal(posted.length, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(posted[1].msg)), {
+    type: 'toggle-aux-pane',
+    payload: {
+      tabType: 'fileView',
+      uri: 'file:///c:/repo/server.mjs',
+      background: true,
+      keepOpen: true,
+      targetConversationId: 'conv-active-1',
+    },
+  });
+
+  fileBtns[1].click();
+  assert.equal(posted.length, 3);
+  assert.deepEqual(JSON.parse(JSON.stringify(posted[2].msg)), {
+    type: 'toggle-aux-pane',
+    payload: {
+      tabType: 'artifactView',
+      uri: 'file:///c:/Users/arthu/.gemini/antigravity/brain/conv-active-1/plan.md',
+      background: true,
+      targetConversationId: 'conv-active-1',
+    },
+  });
+  assert.equal('keepOpen' in posted[2].msg.payload, false, 'artifactView omits keepOpen');
+
+  window.ContextMonitor.activeConversationId = '_new';
+  currentSessionId = '';
+  fileBtns[0].click();
+  assert.equal(posted.length, 4);
+  assert.equal('targetConversationId' in posted[3].msg.payload, false);
+});
+
+test('clicking #diag-export-btn invokes AgyShell.downloadFile producing valid JSON containing diagnostics and logs', async () => {
+  const timers = fakeTimers();
+  const { window: domWin, document: domDoc, HTMLElement, Element, customElements, CustomEvent } = parseHTML(
+    '<!doctype html><html><body><div id="app"></div></body></html>'
+  );
+  Object.defineProperty(domDoc, 'hidden', { value: false, configurable: true });
+  const downloadCalls = [];
+  const window = Object.assign(domWin, {
+    parent: {},
+    location: { search: '?conversationId=c-exp' },
+    HTMLElement,
+    Element,
+    customElements,
+    CustomEvent,
+    AgyShell: {
+      downloadFile: async (opts) => {
+        const raw = await opts.produce();
+        downloadCalls.push({ opts, raw });
+        return { ok: true, mode: 'direct' };
+      },
+    },
+  });
+  const ctx = vm.createContext({
+    window,
+    document: domDoc,
+    HTMLElement,
+    Element,
+    customElements,
+    CustomEvent,
+    URLSearchParams,
+    requestAnimationFrame: (fn) => fn(),
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+  });
+  for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+  window.ContextMonitor.apiCall = async (path) => {
+    if (path === '/api/diagnostics') {
+      return {
+        terminals: [{ terminalId: 'term-1', pid: 101, title: 'node', workspaceUri: 'file:///c:/repo' }],
+        sidecars: [{ sidecarId: 'cm', displayName: 'Context Monitor', statusBadge: 'RUNNING', isRunning: true }],
+        logs: [{ level: 'warn', text: 'HTTP 429 retry #1' }],
+      };
+    }
+    return {
+      isExecuting: false,
+      session: { cascadeId: 'c-exp', title: 'Export Session' },
+      model: { label: 'Gemini 4 Argon (High)' },
+      context: { totalUsedTokens: 12_000 },
+      turnInsights: { performance: { ttftFormatted: '0.8s' } },
+    };
+  };
+
+  vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+  await timers.advance(0);
+
+  domDoc.querySelector('[data-tab="diagnostics"]').click();
+  await timers.advance(0);
+  domDoc.getElementById('diag-log-toggle').click();
+  await timers.advance(0);
+
+  const exportBtn = domDoc.getElementById('diag-export-btn');
+  assert.ok(exportBtn, 'renders #diag-export-btn in diagnostics controls');
+  exportBtn.click();
+  await timers.advance(0);
+
+  assert.equal(downloadCalls.length, 1);
+  assert.equal(downloadCalls[0].opts.filename, 'context-monitor-diagnostics.json');
+  assert.equal(downloadCalls[0].opts.mimeType, 'application/json');
+  assert.equal(downloadCalls[0].opts.title, 'Context Monitor Diagnostics');
+
+  const parsed = JSON.parse(downloadCalls[0].raw);
+  assert.equal(typeof parsed.exportedAt, 'string');
+  assert.equal(parsed.session.cascadeId, 'c-exp');
+  assert.equal(parsed.model.label, 'Gemini 4 Argon (High)');
+  assert.equal(parsed.context.totalUsedTokens, 12_000);
+  assert.equal(parsed.turnInsights.performance.ttftFormatted, '0.8s');
+  assert.equal(parsed.diagnostics.terminals[0].terminalId, 'term-1');
+  assert.deepEqual(parsed.logs, [{ level: 'warn', text: 'HTTP 429 retry #1' }]);
+
+  // Also verify delegation through real AgyShell + AgyUI (sandboxed iframe fallback modal)
+  const { window: kitWin, document: kitDoc, HTMLElement: KitEl, customElements: kitCE, CustomEvent: KitEv } = parseHTML(
+    '<!doctype html><html><body><div id="app"></div></body></html>'
+  );
+  for (const key of ['AgyUI', 'AgyShell', 'ContextMonitor']) kitWin[key] = undefined;
+  const kitPosted = [];
+  Object.assign(kitWin, {
+    parent: { postMessage: (msg, origin) => kitPosted.push({ msg, origin }) },
+    location: { search: '?conversationId=conv-kit' },
+    Blob,
+    URL,
+    HTMLElement: KitEl,
+    customElements: kitCE,
+    CustomEvent: KitEv,
+  });
+  const kitCtx = vm.createContext({
+    window: kitWin,
+    document: kitDoc,
+    HTMLElement: KitEl,
+    customElements: kitCE,
+    CustomEvent: KitEv,
+    Blob,
+    URL,
+    URLSearchParams,
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+  });
+  vm.runInContext(AGY_CLIENT_JS, kitCtx, { filename: 'shell.js' });
+  vm.runInContext(buildAgyUiJs(['core', 'tabs', 'overlays', 'controls', 'surfaces']), kitCtx, { filename: 'ui.js' });
+  for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), kitCtx, { filename: rel });
+
+  kitWin.ContextMonitor.newConversation();
+  kitWin.ContextMonitor.toggleAuxPane({ tabType: 'fileView', uri: 'file:///c:/a.js', background: true, keepOpen: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(kitPosted[0].msg)), { type: 'new-conversation' });
+  assert.deepEqual(JSON.parse(JSON.stringify(kitPosted[1].msg)), {
+    type: 'toggle-aux-pane',
+    payload: { tabType: 'fileView', uri: 'file:///c:/a.js', background: true, keepOpen: true },
+  });
+  const modalRes = await kitWin.ContextMonitor.downloadFile({
+    filename: 'context-monitor-diagnostics.json',
+    mimeType: 'application/json',
+    title: 'Context Monitor Diagnostics',
+    produce: () => '{"diagnostics":{},"logs":[]}',
+  });
+  assert.equal(modalRes.ok, true);
+  assert.equal(modalRes.mode, 'fallback');
+  assert.ok(kitDoc.querySelector('.agy-download-modal'), 'real AgyShell.downloadFile opens AgyUI download modal in sandboxed iframe');
 });

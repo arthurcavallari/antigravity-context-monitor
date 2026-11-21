@@ -18,6 +18,10 @@
     arrow_back: 'M313-440l224 224-57 56-320-320 320-320 57 56-224 224h487v80H313Z',
     arrow_forward: 'M647-440H160v-80h487L423-744l57-56 320 320-320 320-57-56 224-224Z',
     check: 'M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z',
+    add:
+      'M450-450H250q-12.75,0-21.37-8.63T220-480.01t8.62-21.37T250-510H450V-710q0-12.75 8.63-21.37T480.01-740t21.37,8.62T510-710v200H710q12.75,0 21.37,8.63T740-479.99t-8.62,21.37T710-450H510v200q0,12.75-8.63,21.37T479.99-220t-21.37-8.62T450-250V-450Z',
+    download:
+      'M480-320L280-520l56-58l104,104v-326h80v326l104-104l56,58L480-320ZM240-160q-33,0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0,33-23.5,56.5T720-160H240Z',
     subdirectory_arrow_right: 'm560-120-57-57 144-143H200v-480h80v400h367L503-544l56-57 241 241-240 240Z',
     // Stop (a ring around a square) and the pending spinner (a three-quarter ring), on the
     // Material Symbols 960-unit grid that Antigravity uses for its stop and loading states.
@@ -315,8 +319,17 @@
 
   // Re-renders replace nodes through innerHTML, so focus is restored by a selector that finds the
   // same control again. Controls without an id are keyed by their tag, stable classes and data attributes.
-  const FOCUS_KEY_ATTRS = ['data-subagent-id', 'data-server', 'data-terminal-id', 'data-sidecar-id', 'data-plugin-id', 'data-action', 'data-tab'];
-  const STATE_CLASSES = new Set(['active', 'active-subagent', 'open', 'on', 'spinning', 'disabled', 'strike']);
+  const FOCUS_KEY_ATTRS = [
+    'data-subagent-id',
+    'data-file-uri',
+    'data-server',
+    'data-terminal-id',
+    'data-sidecar-id',
+    'data-plugin-id',
+    'data-action',
+    'data-tab',
+  ];
+  const STATE_CLASSES = new Set(['active', 'active-subagent', 'open', 'on', 'spinning', 'disabled', 'strike', 'warn', 'danger']);
   const SAFE_NAV_SEGMENT_RE = /^[a-zA-Z0-9._@+-]+$/;
   function isSafeNavId(raw) {
     if (typeof raw !== 'string') return false;
@@ -631,6 +644,84 @@
     if (opts.autoStart !== false) start();
     return { start, sync, stop, triggerNow, isVisible };
   }
+
+  function newConversation() {
+    if (typeof window !== 'undefined' && typeof window.AgyShell?.newConversation === 'function') {
+      return window.AgyShell.newConversation();
+    }
+    if (typeof window !== 'undefined' && typeof window.sidecar?.ui?.newConversation === 'function') {
+      window.sidecar.ui.newConversation();
+      return true;
+    }
+    if (typeof window === 'undefined' || !window.parent || window.parent === window) return false;
+    try {
+      window.parent.postMessage({ type: 'new-conversation' }, '*');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function toggleAuxPane(request) {
+    if (typeof window !== 'undefined' && typeof window.AgyShell?.toggleAuxPane === 'function') {
+      return window.AgyShell.toggleAuxPane(request);
+    }
+    if (typeof window !== 'undefined' && typeof window.sidecar?.ui?.toggleAuxPane === 'function') {
+      window.sidecar.ui.toggleAuxPane(request);
+      return true;
+    }
+    if (typeof window === 'undefined' || !window.parent || window.parent === window) return false;
+    try {
+      window.parent.postMessage({ type: 'toggle-aux-pane', payload: request ?? {} }, '*');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function downloadFile(opts = {}) {
+    if (typeof window !== 'undefined' && typeof window.AgyShell?.downloadFile === 'function') {
+      return window.AgyShell.downloadFile(opts);
+    }
+    if (typeof opts?.produce !== 'function') {
+      return { ok: false, mode: 'failed', error: new Error('downloadFile requires a produce() function') };
+    }
+    try {
+      const raw = await opts.produce();
+      const filename = String(opts.filename || 'download').trim() || 'download';
+      const mimeType = opts.mimeType || 'application/octet-stream';
+      const BlobCtor = (typeof window !== 'undefined' && window.Blob) || (typeof Blob === 'function' ? Blob : null);
+      const blob = raw && typeof raw === 'object' && typeof raw.size === 'number'
+        ? raw
+        : (BlobCtor ? new BlobCtor([String(raw ?? '')], { type: mimeType }) : null);
+      if (blob && typeof window !== 'undefined' && typeof window.AgyUI?.openDownloadModal === 'function') {
+        const modal = window.AgyUI.openDownloadModal({ ...opts, blob, filename });
+        if (modal) return { ok: true, mode: 'fallback' };
+      }
+      const UrlApi = (typeof window !== 'undefined' && window.URL) || (typeof URL !== 'undefined' ? URL : null);
+      if (blob && typeof UrlApi?.createObjectURL === 'function' && typeof document !== 'undefined' && document.createElement) {
+        const objectUrl = UrlApi.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        (document.body || document.documentElement)?.appendChild?.(link);
+        try {
+          link.click?.();
+        } finally {
+          link.remove?.();
+        }
+        if (typeof setTimeout === 'function') {
+          const timer = setTimeout(() => UrlApi.revokeObjectURL?.(objectUrl), 10000);
+          timer?.unref?.();
+        }
+        return { ok: true, mode: 'direct' };
+      }
+      return { ok: true, mode: 'fallback' };
+    } catch (err) {
+      return { ok: false, mode: 'failed', error: err instanceof Error ? err : new Error(String(err)) };
+    }
+  }
+
   syncHostFrameAttr();
   Object.assign(cm, {
     ICONS,
@@ -640,6 +731,9 @@
     VISIBILITY_MESSAGE_TYPE,
     readHostVisibility,
     createVisibilityPoller,
+    newConversation,
+    toggleAuxPane,
+    downloadFile,
     applyTheme,
     deriveCmVarsFromEditor,
     rawHtml,

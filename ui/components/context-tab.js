@@ -42,6 +42,27 @@
       }
       return true;
     }
+    const fileTarget = target.closest('[data-file-uri]');
+    if (fileTarget) {
+      const uri = fileTarget.getAttribute('data-file-uri') || '';
+      if (uri) {
+        const isArtifact = fileTarget.getAttribute('data-file-artifact') === 'true';
+        const rawConv = cm.activeConversationId || state?.latestData?.session?.cascadeId || '';
+        const targetConversationId = rawConv && rawConv !== '_new' ? rawConv : '';
+        cm.toggleAuxPane({
+          tabType: isArtifact ? 'artifactView' : 'fileView',
+          uri,
+          background: true,
+          ...(isArtifact ? {} : { keepOpen: true }),
+          ...(targetConversationId ? { targetConversationId } : {}),
+        });
+      }
+      return true;
+    }
+    if (target.closest('#new-conv-btn')) {
+      cm.newConversation();
+      return true;
+    }
     if (target.closest('#refresh-btn')) {
       if (state.isRefreshing) return true;
       refreshTelemetry(true);
@@ -51,9 +72,23 @@
     return false;
   }
 
+  function syncSessionBar(state = {}) {
+    const btn = typeof document !== 'undefined' ? document.getElementById?.('new-conv-btn') : null;
+    if (!btn?.classList) return;
+    const risk = (state?.latestData?.context || state?.context)?.compactionRisk || 'normal';
+    btn.classList.toggle('warn', risk === 'warn');
+    btn.classList.toggle('danger', risk === 'danger');
+  }
+
   function ensureShellMounted(appRoot, state, resetPinTracking, refreshTelemetry) {
-    if (!appRoot || document.getElementById('card-tab-slot')) return;
+    if (!appRoot) return;
+    if (document.getElementById('card-tab-slot')) {
+      syncSessionBar(state);
+      return;
+    }
     document.getElementById('action-msg-slot')?.remove?.();
+    const risk = (state?.latestData?.context || state?.context)?.compactionRisk || 'normal';
+    const riskCls = risk === 'warn' || risk === 'danger' ? ` ${risk}` : '';
     setHtml(
       appRoot,
       html`
@@ -65,6 +100,13 @@
             <label class="cm-sr-only" for="session-select">Conversation</label>
             <select id="session-select" class="session-select"></select>
             <span id="telemetry-pill" class="telemetry-pill" title="Exact API turn telemetry: input_tokens + cache_read_tokens (cache hit %)"></span>
+            <button
+              type="button"
+              id="new-conv-btn"
+              class="agy-icon-btn new-conv-btn${riskCls}"
+              title="Start a new conversation"
+              aria-label="Start a new conversation"
+            >${icon('add', 14)}</button>
           </footer>
         </section>
       `,

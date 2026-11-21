@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { parseHTML } from 'linkedom';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
+import { describeChatStep } from '../lib/context-inspector.mjs';
 
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui');
 const UI_SCRIPTS = [
@@ -316,4 +317,170 @@ test('renderSubagentsDrawer renders swarmThreadTitle pill and distinct warn/off 
   assert.match(html, /class="agy-badge warn"><span class="agy-badge-dot"><\/span>In Review<\/span>/);
   assert.match(html, /class="agy-badge off"><span class="agy-badge-dot"><\/span>Waiting<\/span>/);
   assert.match(html, /class="agy-badge ready"><span class="agy-badge-dot"><\/span>Done<\/span>/);
+});
+
+test('describeChatStep populates normalized fileUri and isArtifact on VIEW_FILE, WRITE_TO_FILE, CODE_ACTION, and PLANNER_RESPONSE steps', () => {
+  const steps = [
+    {
+      type: 'CORTEX_STEP_TYPE_VIEW_FILE',
+      viewFile: { absolutePathUri: '  file:///c:/repo/src/app.js  ' },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_VIEW_FILE',
+      metadata: {
+        toolCall: {
+          argumentsJson: JSON.stringify({ AbsolutePath: 'C:\\Users\\dev\\repo\\index.mjs' }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_VIEW_FILE',
+      metadata: {
+        toolCall: {
+          argumentsJson: JSON.stringify({
+            AbsolutePath: '/Users/dev/.gemini/antigravity/brain/conv-1/plan.md',
+          }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_WRITE_TO_FILE',
+      metadata: {
+        toolCall: {
+          argumentsJson: JSON.stringify({
+            TargetFile: 'C:\\Users\\arthu\\.gemini\\antigravity\\brain\\conv-1\\task.md',
+          }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_CODE_ACTION',
+      codeAction: { isArtifactFile: true },
+      metadata: {
+        toolCall: {
+          argumentsJson: JSON.stringify({ TargetFile: '/workspace/summary.md' }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+      plannerResponse: {
+        toolCalls: [
+          {
+            name: 'write_to_file',
+            argumentsJson: JSON.stringify({
+              TargetFile: '/workspace/artifact.md',
+              ArtifactMetadata: { Summary: 'Plan', UserFacing: true, RequestFeedback: false },
+            }),
+          },
+        ],
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_WRITE_TO_FILE',
+      metadata: {
+        toolCall: {
+          argumentsJson: JSON.stringify({ TargetFile: 'relative/path/file.js' }),
+        },
+      },
+    },
+  ];
+
+  const viewUri = describeChatStep('Step 0 (VIEW_FILE)', steps);
+  assert.equal(viewUri.fileUri, 'file:///c:/repo/src/app.js');
+  assert.equal(viewUri.isArtifact, false);
+
+  const viewWin = describeChatStep('Step 1 (VIEW_FILE)', steps);
+  assert.equal(viewWin.fileUri, 'file:///c:/Users/dev/repo/index.mjs');
+  assert.equal(viewWin.isArtifact, false);
+
+  const viewBrainPosix = describeChatStep('Step 2 (VIEW_FILE)', steps);
+  assert.equal(viewBrainPosix.fileUri, 'file:///Users/dev/.gemini/antigravity/brain/conv-1/plan.md');
+  assert.equal(viewBrainPosix.isArtifact, true);
+
+  const writeBrainWin = describeChatStep('Step 3 (WRITE_TO_FILE)', steps);
+  assert.equal(writeBrainWin.fileUri, 'file:///c:/Users/arthu/.gemini/antigravity/brain/conv-1/task.md');
+  assert.equal(writeBrainWin.isArtifact, true);
+
+  const codeActionArtifact = describeChatStep('Step 4 (CODE_ACTION)', steps);
+  assert.equal(codeActionArtifact.fileUri, 'file:///workspace/summary.md');
+  assert.equal(codeActionArtifact.isArtifact, true);
+
+  const plannerArtifact = describeChatStep('Step 5 (PLANNER_RESPONSE)', steps);
+  assert.equal(plannerArtifact.fileUri, 'file:///workspace/artifact.md');
+  assert.equal(plannerArtifact.isArtifact, true);
+
+  const relWrite = describeChatStep('Step 6 (WRITE_TO_FILE)', steps);
+  assert.equal(relWrite.fileUri, undefined);
+  assert.equal(relWrite.isArtifact, undefined);
+});
+
+test('renderCulpritsDrawer renders file steps as .culprit-file-open buttons, and session-bar/diagnostics controls render #new-conv-btn and #diag-export-btn', () => {
+  const culpritsHtml = ui.renderCulpritsDrawer(
+    {
+      topStepsTokens: 8000,
+      formattedTopStepsTokens: '8.0k top 3',
+      topChatSteps: [
+        {
+          badge: 'Read',
+          label: 'Viewed server.mjs',
+          stepRef: '#1',
+          fileUri: 'file:///c:/repo/server.mjs',
+          isArtifact: false,
+          formattedTokens: '4.0k',
+          barPct: 100,
+        },
+        {
+          badge: 'Edit',
+          label: `Edited plan.md ${HOSTILE}`,
+          stepRef: '#2',
+          fileUri: `file:///c:/Users/arthu/.gemini/antigravity/brain/1/plan.md${HOSTILE}`,
+          isArtifact: true,
+          formattedTokens: '3.0k',
+          barPct: 75,
+        },
+        {
+          badge: 'Subagent',
+          label: 'Spawned worker',
+          stepRef: '#3',
+          subagentId: 'sa-9',
+          fileUri: 'file:///c:/repo/ignored.js',
+          isArtifact: false,
+          formattedTokens: '1.0k',
+          barPct: 25,
+        },
+      ],
+      promptSections: [],
+    },
+    256_000,
+    true,
+  );
+
+  assert.ok(!culpritsHtml.includes(HOSTILE));
+  assert.match(
+    culpritsHtml,
+    /<button[^>]*type="button"[^>]*class="fit-prompt culprit-file-open no-focus-ring"[^>]*data-file-uri="file:\/\/\/c:\/repo\/server\.mjs"[^>]*data-file-artifact="false"/,
+  );
+  assert.ok(
+    culpritsHtml.includes(
+      `data-file-uri="file:///c:/Users/arthu/.gemini/antigravity/brain/1/plan.md${HOSTILE_ESCAPED}"`
+    ),
+  );
+  assert.ok(culpritsHtml.includes('data-file-artifact="true"'));
+  assert.ok(!culpritsHtml.includes('ignored.js'), 'subagent steps keep subagent-open button when subagentId is set');
+
+  const diagControls = ui.renderDiagnosticsControls(2, { logTailingEnabled: false, logAutoScroll: true });
+  assert.match(diagControls, /id="diag-export-btn"[\s\S]*Export/);
+
+  const { window, document, HTMLElement, customElements, CustomEvent } = parseHTML('<!doctype html><html><body><div id="app"></div></body></html>');
+  const ctx = vm.createContext({ window, document, HTMLElement, customElements, CustomEvent, URLSearchParams });
+  for (const rel of UI_SCRIPTS) vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+  const cm = window.ContextMonitor;
+  const appEl = document.getElementById('app');
+  cm.ensureShellMounted(appEl, { latestData: { context: { compactionRisk: 'warn' } } }, () => {}, () => {});
+  const newBtn = document.getElementById('new-conv-btn');
+  assert.ok(newBtn, 'session-bar renders #new-conv-btn');
+  assert.equal(newBtn.getAttribute('title'), 'Start a new conversation');
+  assert.equal(newBtn.getAttribute('aria-label'), 'Start a new conversation');
+  assert.equal(newBtn.classList.contains('warn'), true);
 });

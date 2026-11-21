@@ -296,9 +296,12 @@
     const stepsHtml = topSteps.length
       ? topSteps.map((st) => {
         const labelText = st.label || st.name || '';
-        // A subagent step's title is the card's one button, stretched over the card (see components.css).
-        const labelHtml = st.subagentId
-          ? html`
+        // A subagent or file step's title is the card's one button, stretched over the card (see components.css).
+        let labelHtml = html`<span class="fit-prompt" title="${labelText}">${labelText}</span>`;
+        let cardCls = 'fit-card';
+        if (st.subagentId) {
+          cardCls = 'fit-card subagent-culprit clickable';
+          labelHtml = html`
             <button
               type="button"
               class="fit-prompt subagent-open no-focus-ring"
@@ -306,10 +309,22 @@
               aria-label="Inspect subagent ${labelText}"
               title="${labelText}"
             >${labelText}</button>
-          `
-          : html`<span class="fit-prompt" title="${labelText}">${labelText}</span>`;
+          `;
+        } else if (st.fileUri) {
+          cardCls = 'fit-card file-culprit clickable';
+          labelHtml = html`
+            <button
+              type="button"
+              class="fit-prompt culprit-file-open no-focus-ring"
+              data-file-uri="${esc(st.fileUri)}"
+              data-file-artifact="${st.isArtifact ? 'true' : 'false'}"
+              aria-label="Open ${labelText}"
+              title="${labelText}"
+            >${labelText}</button>
+          `;
+        }
         return html`
-          <div class="${st.subagentId ? 'fit-card subagent-culprit clickable' : 'fit-card'}">
+          <div class="${cardCls}">
             <div class="fit-header">
               <div class="fit-flow" style="min-width:0;flex:1;flex-wrap:nowrap">
                 <span class="fit-pill">${esc(st.badge || 'Step')}</span>

@@ -117,6 +117,12 @@
         Task Logs <span id="diag-log-count-pill" class="tier-pill">${tailOn ? logsCount : 'Paused'}</span>
       </h3>
       <div class="mcp-card-actions" style="flex-wrap:wrap">
+        <button
+          id="diag-export-btn"
+          type="button"
+          class="agy-btn agy-btn-secondary has-icon"
+          title="Export diagnostics snapshot as JSON"
+        >${icon('download', 14)}<span>Export</span></button>
         <button id="diag-clear-logs-btn" type="button" class="agy-btn agy-btn-secondary"${hideStyle}>Clear</button>
         <span id="diag-autoscroll-row" class="cm-switch-row"${hideStyle}>
           <label id="diag-autoscroll-label" for="diag-autoscroll-toggle">Auto-scroll</label>
@@ -435,6 +441,33 @@
         state.renderedLogCount = 0;
       }
       syncDiagnosticsDom(state);
+      return true;
+    }
+    if (target.closest('#diag-export-btn')) {
+      const res = await cm.downloadFile({
+        filename: 'context-monitor-diagnostics.json',
+        mimeType: 'application/json',
+        title: 'Context Monitor Diagnostics',
+        produce: () => {
+          const exportedAt = new Date().toISOString();
+          return JSON.stringify(
+            {
+              exportedAt,
+              session: state?.latestData?.session ?? null,
+              model: state?.latestData?.model ?? null,
+              context: state?.latestData?.context ?? null,
+              turnInsights: state?.latestData?.turnInsights ?? null,
+              diagnostics: state?.diagData ?? null,
+              logs: Array.isArray(state?.logBuffer) ? state.logBuffer : [],
+            },
+            null,
+            2,
+          );
+        },
+      });
+      if (res?.ok === false) {
+        cm.showToast?.(`Could not export diagnostics: ${res.error?.message || 'Download failed'}`, true);
+      }
       return true;
     }
     if (target.closest('#diag-clear-logs-btn')) {
