@@ -1073,3 +1073,110 @@ test('2.34.0 dual-model Orchestrator + Executor turns avoid false loop_tax, sing
   assert.equal(stepOnlyDualFit.latestTurnFit.status, 'optimal');
   assert.equal(stepOnlyDualFit.latestTurnFit.shortModelLabel, '4 Neon → 4 Hydrogen');
 });
+
+test('analyzeModelAndEffortFit clears stale lastKnownExecEnum across single-model follow-ups and detects flagship+flagship / fast+fast dual turns', () => {
+  const catalog = {
+    clientModelConfigs: [
+      { label: 'Gemini 4 Neon (High)', modelId: 'gemini-4-neon-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M532' } },
+      { label: 'Gemini 4 Hydrogen (High)', modelId: 'gemini-4-hydrogen-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M525' } },
+      { label: 'Gemini 4 Hydrogen (Low)', modelId: 'gemini-4-hydrogen-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M527' } },
+      { label: 'Orchestrator (Neon)', modelId: 'gemini-pro-orchestrator-neon', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M537' } },
+      { label: 'Gemini 4 Carbon (Low)', modelId: 'gemini-4-carbon-low', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M438' } },
+      { label: 'Claude Opus 5.5 (High)', modelId: 'claude-opus-5-5-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M402' } },
+      { label: 'Claude Sonnet 5.5 (High)', modelId: 'claude-sonnet-5-5-high', modelOrAlias: { model: 'MODEL_PLACEHOLDER_M405' } },
+    ],
+  };
+
+  // 1. Turn 1 dual-model (M532 -> M525) -> Turn 2 single-model M537 (chatModel.model only) -> Turn 3 single-model M402 (chatModel.model only)
+  const switchSteps = [
+    {
+      type: 'CORTEX_STEP_TYPE_USER_INPUT',
+      userInput: {
+        userResponse: 'turn 1 dual',
+        userConfig: {
+          plannerConfig: {
+            planModel: 'MODEL_PLACEHOLDER_M532',
+            planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M525' },
+          },
+        },
+      },
+    },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Plan.' } },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'turn 2 solo M537' } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Coordinated.' } },
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'turn 3 solo Claude' } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Done.' } },
+  ];
+  const switchGens = [
+    { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M532', timeToFirstToken: '3.0s', usage: { inputTokens: 20000, outputTokens: 150, thinkingOutputTokens: 500 } } },
+    { stepIndices: [2], chatModel: { model: 'MODEL_PLACEHOLDER_M525', timeToFirstToken: '2.0s', usage: { inputTokens: 21000, outputTokens: 100, thinkingOutputTokens: 200 } } },
+    { stepIndices: [4], chatModel: { model: 'MODEL_PLACEHOLDER_M537', timeToFirstToken: '4.0s', usage: { inputTokens: 22000, outputTokens: 200, thinkingOutputTokens: 900 } } },
+    { stepIndices: [6], chatModel: { model: 'MODEL_PLACEHOLDER_M402', timeToFirstToken: '3.5s', usage: { inputTokens: 23000, outputTokens: 200, thinkingOutputTokens: 600 } } },
+  ];
+  const switchFit = analyzeModelAndEffortFit(switchGens, switchSteps, catalog);
+  assert.equal(switchFit.evaluatedTurns.length, 3);
+  assert.equal(switchFit.evaluatedTurns[0].shortModelLabel, '4 Neon → 4 Hydrogen');
+  assert.equal(switchFit.evaluatedTurns[1].shortModelLabel, 'Orchestrator (Neon)');
+  assert.equal(switchFit.evaluatedTurns[1].effort, 'XHigh');
+  assert.equal(switchFit.evaluatedTurns[2].shortModelLabel, 'Opus 5.5 (High)');
+  assert.equal(switchFit.evaluatedTurns[2].effort, 'High');
+
+  // 2. Turn 1 dual-model (M532 -> M525) -> Turn 2 disables Executor without userConfig; all 4 invocations run on M532 and hit loop_tax -> recommends '4 Neon → 4 Hydrogen'
+  const disableExecSteps = [
+    switchSteps[0],
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Plan.' } },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'turn 2 executor disabled' } },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Summary.' } },
+  ];
+  const disableExecGens = [
+    switchGens[0],
+    switchGens[1],
+    { stepIndices: [4], chatModel: { model: 'MODEL_PLACEHOLDER_M532', timeToFirstToken: '2.5s', usage: { inputTokens: 25000, outputTokens: 100, thinkingOutputTokens: 200 } } },
+    { stepIndices: [5], chatModel: { model: 'MODEL_PLACEHOLDER_M532', timeToFirstToken: '5.0s', usage: { inputTokens: 27000, outputTokens: 100, thinkingOutputTokens: 650 } } },
+    { stepIndices: [6], chatModel: { model: 'MODEL_PLACEHOLDER_M532', timeToFirstToken: '4.8s', usage: { inputTokens: 29000, outputTokens: 100, thinkingOutputTokens: 650 } } },
+    { stepIndices: [7], chatModel: { model: 'MODEL_PLACEHOLDER_M532', timeToFirstToken: '2.5s', usage: { inputTokens: 31000, outputTokens: 250, thinkingOutputTokens: 200 } } },
+  ];
+  const disableExecFit = analyzeModelAndEffortFit(disableExecGens, disableExecSteps, catalog);
+  assert.equal(disableExecFit.latestTurnFit.shortModelLabel, '4 Neon (High)');
+  assert.equal(disableExecFit.latestTurnFit.status, 'loop_tax');
+  assert.equal(disableExecFit.latestTurnFit.recommendedModel, '4 Neon → 4 Hydrogen');
+
+  // 3. Fallback dual-turn detection for flagship + flagship (Orchestrator Neon + Carbon Low) and fast + fast (Sonnet 5.5 + Hydrogen Low) without planExecuteConfig
+  const twoFlagshipFit = analyzeModelAndEffortFit(
+    [
+      { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M537', timeToFirstToken: '4.0s', usage: { inputTokens: 20000, outputTokens: 200, thinkingOutputTokens: 700 } } },
+      { stepIndices: [2], chatModel: { model: 'MODEL_PLACEHOLDER_M438', timeToFirstToken: '4.2s', usage: { inputTokens: 22000, outputTokens: 100, thinkingOutputTokens: 600 } } },
+      { stepIndices: [3], chatModel: { model: 'MODEL_PLACEHOLDER_M438', timeToFirstToken: '4.1s', usage: { inputTokens: 24000, outputTokens: 100, thinkingOutputTokens: 600 } } },
+      { stepIndices: [4], chatModel: { model: 'MODEL_PLACEHOLDER_M438', timeToFirstToken: '2.0s', usage: { inputTokens: 26000, outputTokens: 200, thinkingOutputTokens: 150 } } },
+    ],
+    [
+      { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'orchestrate carbon low' } },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Plan.' } },
+      { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+      { type: 'CORTEX_STEP_TYPE_VIEW_FILE' },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Done.' } },
+    ],
+    catalog,
+  );
+  assert.equal(twoFlagshipFit.latestTurnFit.shortModelLabel, 'Orchestrator (Neon) → 4 Carbon');
+  assert.equal(twoFlagshipFit.latestTurnFit.status, 'optimal');
+
+  const twoFastFit = analyzeModelAndEffortFit(
+    [
+      { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M405', timeToFirstToken: '2.8s', usage: { inputTokens: 18000, outputTokens: 200, thinkingOutputTokens: 450 } } },
+      { stepIndices: [2], chatModel: { model: 'MODEL_PLACEHOLDER_M527', timeToFirstToken: '1.5s', usage: { inputTokens: 20000, outputTokens: 150, thinkingOutputTokens: 80 } } },
+    ],
+    [
+      { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { userResponse: 'sonnet plan hydrogen exec' } },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: 'Plan.' } },
+      { type: 'CORTEX_STEP_TYPE_REPLACE_FILE_CONTENT', replaceFileContent: { targetFile: 'src/x.mjs' } },
+    ],
+    catalog,
+  );
+  assert.equal(twoFastFit.latestTurnFit.shortModelLabel, 'Sonnet 5.5 → 4 Hydrogen');
+});

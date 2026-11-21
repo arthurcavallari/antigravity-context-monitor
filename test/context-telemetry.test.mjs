@@ -1806,3 +1806,214 @@ test('2.34.0 single-model Orchestrator (Neon) M537 resolves XHigh with dualModel
     clearConversationDetails();
   }
 });
+
+test('fetchFullTelemetry detects dual-model without userInput.userConfig and resets dualModel on single-model follow-up turns', async () => {
+  clearRpcCache();
+  clearConversationDetails();
+  try {
+    // 1a. No userInput.userConfig; planExecuteConfig only on generatorMetadata[0].plannerConfig
+    const genCfgOnlyRes = await fetchFullTelemetry({
+      lsAddress: '127.0.0.1:59735',
+      csrfToken: 'tok',
+      configPath: join(tmpdir(), 'nonexistent-234a.json'),
+      hostCascadeId: 'conv-gen-cfg-only',
+      fetchFn: async (url) => {
+        const method = url.slice(url.lastIndexOf('/') + 1);
+        let body = {};
+        if (method === 'GetAllCascadeTrajectories') {
+          body = {
+            trajectorySummaries: {
+              'conv-gen-cfg-only': { status: 'CASCADE_RUN_STATUS_IDLE', stepCount: 3, lastModifiedTime: '2026-11-21T09:00:00Z' },
+            },
+          };
+        } else if (method === 'GetCascadeTrajectorySteps') {
+          body = {
+            steps: [
+              { type: 'CORTEX_STEP_TYPE_USER_INPUT', status: 'CORTEX_STEP_STATUS_DONE', userInput: { userResponse: 'implement feature' } },
+              { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'Plan.' } },
+              { type: 'CORTEX_STEP_TYPE_VIEW_FILE', status: 'CORTEX_STEP_STATUS_DONE' },
+            ],
+          };
+        } else if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
+          body = {
+            generatorMetadata: [
+              {
+                stepIndices: [1],
+                plannerConfig: {
+                  planModel: 'MODEL_PLACEHOLDER_M532',
+                  planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M525' },
+                },
+                chatModel: { model: 'MODEL_PLACEHOLDER_M532', usage: { inputTokens: '10000', outputTokens: '150', thinkingOutputTokens: '400' } },
+              },
+              {
+                stepIndices: [2],
+                chatModel: { model: 'MODEL_PLACEHOLDER_M525', usage: { inputTokens: '12000', outputTokens: '100', thinkingOutputTokens: '100' } },
+              },
+            ],
+          };
+        }
+        return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+      },
+    });
+    assert.equal(genCfgOnlyRes.model.dualModel?.active, true);
+    assert.equal(genCfgOnlyRes.model.dualModel?.activeRole, 'executor');
+    assert.equal(genCfgOnlyRes.model.badgeLabel, '4 Neon → 4 Hydrogen');
+
+    // 1b. No plannerConfig anywhere; annotations.planExecute === true with distinct chatModel.model across generatorMetadataList
+    const annotChatOnlyRes = await fetchFullTelemetry({
+      lsAddress: '127.0.0.1:59736',
+      csrfToken: 'tok',
+      configPath: join(tmpdir(), 'nonexistent-234b.json'),
+      hostCascadeId: 'conv-annot-chat-only',
+      fetchFn: async (url) => {
+        const method = url.slice(url.lastIndexOf('/') + 1);
+        let body = {};
+        if (method === 'GetAllCascadeTrajectories') {
+          body = {
+            trajectorySummaries: {
+              'conv-annot-chat-only': {
+                status: 'CASCADE_RUN_STATUS_IDLE',
+                stepCount: 3,
+                lastModifiedTime: '2026-11-21T09:01:00Z',
+                annotations: { planExecute: true },
+              },
+            },
+          };
+        } else if (method === 'GetCascadeTrajectorySteps') {
+          body = {
+            steps: [
+              { type: 'CORTEX_STEP_TYPE_USER_INPUT', status: 'CORTEX_STEP_STATUS_DONE', userInput: { userResponse: 'go' } },
+              { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'Plan.' } },
+              { type: 'CORTEX_STEP_TYPE_VIEW_FILE', status: 'CORTEX_STEP_STATUS_DONE' },
+            ],
+          };
+        } else if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
+          body = {
+            generatorMetadata: [
+              { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M532', usage: { inputTokens: '8000', outputTokens: '120' } } },
+              { stepIndices: [2], chatModel: { model: 'MODEL_PLACEHOLDER_M525', usage: { inputTokens: '9000', outputTokens: '90' } } },
+            ],
+          };
+        }
+        return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+      },
+    });
+    assert.equal(annotChatOnlyRes.model.dualModel?.active, true);
+    assert.equal(annotChatOnlyRes.model.dualModel?.activeRole, 'executor');
+    assert.equal(annotChatOnlyRes.model.badgeLabel, '4 Neon → 4 Hydrogen');
+
+    // 2. Turn 1 dual-model (M532 -> M525, annotations.planExecute: true) -> Turn 2 switches to single-model M537 (with or without userConfig) or single-model M532
+    const turn1Steps = [
+      {
+        type: 'CORTEX_STEP_TYPE_USER_INPUT',
+        status: 'CORTEX_STEP_STATUS_DONE',
+        userInput: {
+          userResponse: 'turn 1 dual',
+          userConfig: {
+            plannerConfig: {
+              planModel: 'MODEL_PLACEHOLDER_M532',
+              planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M525' },
+            },
+          },
+        },
+      },
+      { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', model: 'MODEL_PLACEHOLDER_M532' },
+      { type: 'CORTEX_STEP_TYPE_VIEW_FILE', status: 'CORTEX_STEP_STATUS_DONE', model: 'MODEL_PLACEHOLDER_M525' },
+    ];
+    const turn1Gens = [
+      {
+        stepIndices: [1],
+        plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532', planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M525' } },
+        chatModel: { model: 'MODEL_PLACEHOLDER_M532', usage: { inputTokens: '10000', outputTokens: '100' } },
+      },
+      {
+        stepIndices: [2],
+        chatModel: { model: 'MODEL_PLACEHOLDER_M525', usage: { inputTokens: '11000', outputTokens: '100' } },
+      },
+    ];
+
+    const switchToM537Explicit = await fetchFullTelemetry({
+      lsAddress: '127.0.0.1:59737',
+      csrfToken: 'tok',
+      configPath: join(tmpdir(), 'nonexistent-234c.json'),
+      hostCascadeId: 'conv-switch-m537',
+      fetchFn: async (url) => {
+        const method = url.slice(url.lastIndexOf('/') + 1);
+        let body = {};
+        if (method === 'GetAllCascadeTrajectories') {
+          body = {
+            trajectorySummaries: {
+              'conv-switch-m537': {
+                status: 'CASCADE_RUN_STATUS_IDLE',
+                stepCount: 5,
+                lastModifiedTime: '2026-11-21T09:02:00Z',
+                annotations: { planExecute: true },
+              },
+            },
+          };
+        } else if (method === 'GetCascadeTrajectorySteps') {
+          body = {
+            steps: [
+              ...turn1Steps,
+              {
+                type: 'CORTEX_STEP_TYPE_USER_INPUT',
+                status: 'CORTEX_STEP_STATUS_DONE',
+                userInput: {
+                  userResponse: 'turn 2 orchestrator single',
+                  userConfig: { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M537' } },
+                },
+              },
+              { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', model: 'MODEL_PLACEHOLDER_M537' },
+            ],
+          };
+        } else if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
+          body = {
+            generatorMetadata: [
+              ...turn1Gens,
+              { stepIndices: [4], chatModel: { model: 'MODEL_PLACEHOLDER_M537', usage: { inputTokens: '14000', outputTokens: '200' } } },
+            ],
+          };
+        }
+        return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+      },
+    });
+    assert.equal(switchToM537Explicit.model.dualModel, null);
+    assert.equal(switchToM537Explicit.model.badgeLabel, 'Orchestrator (Neon)');
+    assert.equal(switchToM537Explicit.model.thinkingEffort, 'XHigh');
+
+    // Turn 2 switches to M537 without userInput.userConfig (chatModel.model only)
+    const switchToM537ChatOnly = resolveModelMetadata(
+      {},
+      [...turn1Gens, { stepIndices: [4], chatModel: { model: 'MODEL_PLACEHOLDER_M537', usage: { inputTokens: '14000', outputTokens: '200' } } }],
+      [
+        ...turn1Steps,
+        { type: 'CORTEX_STEP_TYPE_USER_INPUT', status: 'CORTEX_STEP_STATUS_DONE', userInput: { userResponse: 'turn 2 no userConfig' } },
+        { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE' },
+      ],
+      { annotations: { planExecute: true } },
+    );
+    assert.equal(switchToM537ChatOnly.dualModel, null);
+    assert.equal(switchToM537ChatOnly.badgeLabel, 'Orchestrator (Neon)');
+
+    // Turn 2 keeps planModel M532 but disables Executor (plannerConfig without planExecuteConfig)
+    const switchToSingleM532 = resolveModelMetadata(
+      {},
+      [...turn1Gens, { stepIndices: [4], chatModel: { model: 'MODEL_PLACEHOLDER_M532', usage: { inputTokens: '14000', outputTokens: '200' } } }],
+      [
+        ...turn1Steps,
+        {
+          type: 'CORTEX_STEP_TYPE_USER_INPUT',
+          status: 'CORTEX_STEP_STATUS_DONE',
+          userInput: { userResponse: 'turn 2 neon solo', userConfig: { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532' } } },
+        },
+        { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE' },
+      ],
+      { annotations: { planExecute: true } },
+    );
+    assert.equal(switchToSingleM532.dualModel, null);
+    assert.equal(switchToSingleM532.badgeLabel, 'Gemini 4 Neon (High)');
+  } finally {
+    clearRpcCache();
+    clearConversationDetails();
+  }
+});
