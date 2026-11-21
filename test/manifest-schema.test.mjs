@@ -35,7 +35,7 @@ describe('hub-manifest.json validation', () => {
     assert.match(validateSidecarConfig({ args: ['server.mjs'] }).join('\n'), /command is required/);
   });
 
-  it('keeps package.json, hub-manifest.json, and package-lock.json aligned on 1.6.2 and sidecar-kit ^1.8.0 with zero file: paths [CM-14]', () => {
+  it('keeps package.json, hub-manifest.json, and package-lock.json aligned and sidecar-kit >=1.9.0 with zero file: paths [CM-14]', () => {
     const pkgRaw = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
     const lockRaw = readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8');
     assert.doesNotMatch(pkgRaw, /"file:/i);
@@ -44,12 +44,12 @@ describe('hub-manifest.json validation', () => {
     const pkg = JSON.parse(pkgRaw);
     const hub = read('hub-manifest.json');
     const lock = JSON.parse(lockRaw);
-    assert.equal(pkg.version, '1.6.2');
-    assert.equal(hub.version, '1.6.2');
-    assert.equal(lock.version, '1.6.2');
+    assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+    assert.equal(hub.version, pkg.version);
+    assert.equal(lock.version, pkg.version);
     assert.equal(lock.lockfileVersion, 3);
-    assert.equal(pkg.dependencies['antigravity-sidecar-kit'], '^1.8.0');
-    assert.equal(lock.packages?.['']?.version, '1.6.2');
-    assert.equal(lock.packages?.['node_modules/antigravity-sidecar-kit']?.version, '1.8.0');
+    assert.equal(pkg.dependencies['antigravity-sidecar-kit'], '^1.9.0');
+    assert.equal(lock.packages?.['']?.version, pkg.version);
+    assert.match(lock.packages?.['node_modules/antigravity-sidecar-kit']?.version || '', /^1\.9\./);
   });
 });
