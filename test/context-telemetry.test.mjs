@@ -2174,3 +2174,147 @@ test('cross-vendor and custom-executor dual-model turns preserve Planner apiProv
     clearConversationDetails();
   }
 });
+
+test('hydrateSwarmSummaries reverse-resolves cold coordinator from worker conversation, uses transcript turnEnded over wake_mode, and rolls up worker transcript tokens', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'cm-swarm-rollup-'));
+  const coordId = 'coord-cold-9001';
+  const swarmDir = join(tmp, 'brain', coordId, '.system_generated', 'swarm');
+  mkdirSync(swarmDir, { recursive: true });
+  writeFileSync(join(swarmDir, 'swarm.json'), JSON.stringify({ created_at: '2026-11-22T10:00:00Z' }));
+  writeFileSync(
+    join(swarmDir, 'members.json'),
+    JSON.stringify({
+      title: 'Cold Coordinator Swarm',
+      members: {
+        coordinator: { conversation_id: coordId, role: 'coordinator', phase: 'RUNNING', model: 'Gemini 4 Neon (High)' },
+        alpha: { conversation_id: 'w-alpha', role: 'worker', phase: 'RUNNING', wake_mode: 'working', model: 'Gemini 4 Neon (High)' },
+        beta: { conversation_id: 'w-beta', role: 'worker', phase: 'RUNNING', wake_mode: 'mentions', model: 'Gemini 4 Hydrogen (Medium)' },
+      },
+    })
+  );
+  writeFileSync(
+    join(swarmDir, 'board.jsonl'),
+    [
+      JSON.stringify({ seq: 1, agent: 'coordinator', kind: 'brief', text: '@alpha Build module A', time: '2026-11-22 10:00:05' }),
+      JSON.stringify({ seq: 2, agent: 'alpha', text: '@coordinator Module A ready for review', time: '2026-11-22 10:02:00' }),
+    ].join('\n') + '\n'
+  );
+
+  // alpha has wake_mode: 'working' (nudged on board), yet its transcript ended cleanly on swarm_wait -> NOT running ('In Review')
+  const alphaLogDir = join(tmp, 'brain', 'w-alpha', '.system_generated', 'logs');
+  mkdirSync(alphaLogDir, { recursive: true });
+  writeFileSync(
+    join(alphaLogDir, 'transcript.jsonl'),
+    [
+      JSON.stringify({
+        step_index: 0,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        input_tokens: 20_000,
+        cache_read_tokens: 0,
+        output_tokens: 500,
+        tool_calls: [{ name: 'read_file', args: {} }],
+      }),
+      JSON.stringify({ step_index: 1, type: 'GENERIC', status: 'DONE', content: 'ok' }),
+      JSON.stringify({
+        step_index: 2,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        input_tokens: 12_000,
+        cache_read_tokens: 20_000,
+        output_tokens: 1_000,
+        tool_calls: [{ name: 'swarm_wait', args: {} }],
+      }),
+      JSON.stringify({ step_index: 3, type: 'GENERIC', status: 'DONE', content: 'parked' }),
+    ].join('\n') + '\n'
+  );
+
+  // beta has wake_mode: 'mentions' (parked on board), yet a background wakeup started a new turn -> IS running ('Running')
+  const betaLogDir = join(tmp, 'brain', 'w-beta', '.system_generated', 'logs');
+  mkdirSync(betaLogDir, { recursive: true });
+  writeFileSync(
+    join(betaLogDir, 'transcript.jsonl'),
+    [
+      JSON.stringify({
+        step_index: 0,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        input_tokens: 15_000,
+        cache_read_tokens: 5_000,
+        output_tokens: 400,
+        tool_calls: [{ name: 'run_command', args: {} }],
+      }),
+    ].join('\n') + '\n'
+  );
+
+  try {
+    clearRpcCache();
+    clearConversationDetails();
+    const detailCalls = [];
+    // GetAllCascadeTrajectories returns ONLY w-alpha (coordinator coord-cold-9001 is cold/evicted from LS memory)
+    const res = await fetchFullTelemetry({
+      lsAddress: '127.0.0.1:59944',
+      csrfToken: 'tok',
+      appDataDir: tmp,
+      configPath: join(tmp, 'config.json'),
+      storagePath: join(tmp, 'storage.json'),
+      hostCascadeId: 'w-alpha',
+      fetchFn: async (url, init) => {
+        const method = String(url).split('/').pop();
+        if (method === 'GetAllCascadeTrajectories') {
+          return {
+            ok: true,
+            status: 200,
+            text: async () =>
+              JSON.stringify({
+                trajectorySummaries: {
+                  'w-alpha': { status: 'CASCADE_RUN_STATUS_IDLE', stepCount: 4 },
+                },
+              }),
+          };
+        }
+        if (method === 'GetCascadeTrajectorySteps' || method === 'GetCascadeTrajectoryGeneratorMetadata') {
+          detailCalls.push(`${method}:${JSON.parse(init?.body || '{}').cascadeId}`);
+        }
+        return { ok: true, status: 200, text: async () => '{}' };
+      },
+    });
+
+    // Reverse lookup hydrated cold coordinator + sibling worker w-beta
+    assert.equal(res.session.cascadeId, 'w-alpha');
+    assert.equal(res.session.isSubagent, true);
+    assert.equal(res.session.rootConversationId, coordId);
+    assert.equal(res.session.rootTitle, 'Cold Coordinator Swarm');
+    assert.equal(res.subagents.totalCount, 2);
+
+    const byId = Object.fromEntries(res.subagents.items.map((x) => [x.cascadeId, x]));
+    // alpha: wake_mode === 'working' overridden by completed swarm_wait in transcript.jsonl
+    assert.equal(byId['w-alpha'].isRunning, false);
+    assert.equal(byId['w-alpha'].statusBadge, 'In Review');
+    assert.equal(byId['w-alpha'].contextTokens, 32_000);
+    assert.equal(byId['w-alpha'].formattedContextTokens, '32.0k');
+    assert.equal(byId['w-alpha'].totalOutputTokens, 1_500);
+    assert.equal(byId['w-alpha'].cumulativeTokens, 53_500);
+    assert.equal(byId['w-alpha'].formattedCumulativeTokens, '53.5k');
+
+    // beta: wake_mode === 'mentions' overridden by unended tool batch in transcript.jsonl
+    assert.equal(byId['w-beta'].isRunning, true);
+    assert.equal(byId['w-beta'].statusBadge, 'Running');
+    assert.equal(byId['w-beta'].contextTokens, 20_000);
+    assert.equal(byId['w-beta'].formattedContextTokens, '20.0k');
+    assert.equal(byId['w-beta'].totalOutputTokens, 400);
+    assert.equal(byId['w-beta'].cumulativeTokens, 20_400);
+
+    // Multi-worker rollup on subagents without issuing detail RPCs for sibling w-beta
+    assert.equal(res.subagents.totalWorkerContextTokens, 52_000);
+    assert.equal(res.subagents.formattedTotalWorkerContextTokens, '52.0k');
+    assert.equal(res.subagents.totalOutputTokens, 1_900);
+    assert.equal(res.subagents.totalCumulativeTokens, 73_900);
+    assert.equal(res.subagents.formattedTotalCumulativeTokens, '73.9k');
+    assert.equal(detailCalls.some((c) => c.endsWith(':w-beta')), false);
+  } finally {
+    clearRpcCache();
+    clearConversationDetails();
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

@@ -88,6 +88,7 @@
           <span class="fit-pill">${esc(sa.modelBadge || 'Gemini')}</span>
           ${sa.swarmThreadTitle ? html`<span class="fit-pill" title="Swarm workstream thread">${esc(sa.swarmThreadTitle)}</span>` : ''}
           <span>${esc(sa.stepCount ?? 0)} step${Number(sa.stepCount) === 1 ? '' : 's'}</span>
+          ${sa.formattedContextTokens ? html`<span>· ${esc(sa.formattedContextTokens)} ctx</span>` : ''}
           ${sa.durationFormatted && sa.durationFormatted !== '—' ? html`<span>· ${esc(sa.durationFormatted)}</span>` : ''}
           ${sa.formattedParentContextTokens ? html`<span>· ${esc(sa.formattedParentContextTokens)} in parent</span>` : ''}
           ${sa.spawnStepRef ? html`<span class="thinking-sub">(${esc(sa.spawnStepRef)})</span>` : ''}
@@ -157,9 +158,11 @@
     const runningCount = Number(subagents?.runningCount ?? items.filter(isSubagentRunning).length);
     const totalSteps = Number(subagents?.totalSteps ?? items.reduce((sum, x) => sum + (Number(x?.stepCount) || 0), 0));
     const parentTokensText = subagents?.formattedParentContextTokens || '';
+    const cumulativeTokensText = subagents?.formattedTotalCumulativeTokens || '';
     const rightParts = [];
     if (runningCount > 0) rightParts.push(`${esc(runningCount)} running`);
     rightParts.push(`${esc(totalSteps)} step${totalSteps === 1 ? '' : 's'}`);
+    if (cumulativeTokensText) rightParts.push(`${esc(cumulativeTokensText)} total`);
     if (parentTokensText) rightParts.push(`${esc(parentTokensText)} in context`);
     const runningDotHtml = runningCount > 0
       ? html`

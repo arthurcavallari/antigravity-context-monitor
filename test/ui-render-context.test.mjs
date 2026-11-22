@@ -281,6 +281,7 @@ test('renderSubagentsDrawer renders swarmThreadTitle pill and distinct warn/off 
       totalCount: 3,
       runningCount: 0,
       totalSteps: 9,
+      formattedTotalCumulativeTokens: '73.9k',
       items: [
         {
           cascadeId: 'w-auth',
@@ -290,6 +291,7 @@ test('renderSubagentsDrawer renders swarmThreadTitle pill and distinct warn/off 
           swarmThreadTitle: 'Core Engine',
           statusBadge: 'In Review',
           stepCount: 5,
+          formattedContextTokens: '32.0k',
         },
         {
           cascadeId: 'w-wait',
@@ -317,6 +319,8 @@ test('renderSubagentsDrawer renders swarmThreadTitle pill and distinct warn/off 
   assert.match(html, /class="agy-badge warn"><span class="agy-badge-dot"><\/span>In Review<\/span>/);
   assert.match(html, /class="agy-badge off"><span class="agy-badge-dot"><\/span>Waiting<\/span>/);
   assert.match(html, /class="agy-badge ready"><span class="agy-badge-dot"><\/span>Done<\/span>/);
+  assert.match(html, /73\.9k total/);
+  assert.match(html, /32\.0k ctx/);
 });
 
 test('describeChatStep populates normalized fileUri and isArtifact on VIEW_FILE, WRITE_TO_FILE, CODE_ACTION, and PLANNER_RESPONSE steps', () => {
