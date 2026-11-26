@@ -48,8 +48,8 @@ describe('hub-manifest.json validation', () => {
     assert.equal(hub.version, pkg.version);
     assert.equal(lock.version, pkg.version);
     assert.equal(lock.lockfileVersion, 3);
-    assert.equal(pkg.dependencies['antigravity-sidecar-kit'], '^1.9.0');
+    assert.equal(pkg.dependencies['antigravity-sidecar-kit'], '^1.10.0');
     assert.equal(lock.packages?.['']?.version, pkg.version);
-    assert.match(lock.packages?.['node_modules/antigravity-sidecar-kit']?.version || '', /^1\.9\./);
+    assert.match(lock.packages?.['node_modules/antigravity-sidecar-kit']?.version || '', /^1\.10\./);
   });
 });
